@@ -587,7 +587,10 @@ def build_pet(args):
 
     # build model
     num_classes = 1
-    backbone = build_backbone_vgg(args)
+    if args.backbone.startswith("vgg"):
+        backbone = build_backbone_vgg(args)
+    elif args.backbone.startswith("efficient"):
+        backbone = build_backbone_efficient(args)
     model = PET(
         backbone,
         num_classes=num_classes,
