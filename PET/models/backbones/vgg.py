@@ -100,7 +100,7 @@ def _vgg(arch, cfg, batch_norm, pretrained, progress, sync=False, **kwargs):
         try:
             state_dict = torch.load(model_paths[arch])
         except:
-            state_dict = torch.hub.load_state_dict_from_url(arch, progress=progress)
+            state_dict = torch.hub.load_state_dict_from_url(model_urls[arch], progress=progress)
         model.load_state_dict(state_dict)
     return model
 
