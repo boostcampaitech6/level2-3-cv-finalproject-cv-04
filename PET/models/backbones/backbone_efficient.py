@@ -24,7 +24,8 @@ class FeatsFusion(nn.Module):
 
     def forward(self, inputs):
         C3, C4, C5 = inputs
-        C3_shape, C4_shape, C5_shape = [64, 64], [32, 32], [16, 16]
+        C3_shape, C4_shape, C5_shape = C3.shape[-2:], C4.shape[-2:], C5.shape[-2:]
+        C3_shape, C4_shape, C5_shape = [x * 2 for x in C3_shape], [x * 2 for x in C4_shape], [x * 2 for x in C5_shape]
 
         C5 = F.interpolate(C5, C5_shape)
         P5_x = self.P5_1(C5)
