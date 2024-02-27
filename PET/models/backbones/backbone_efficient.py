@@ -50,22 +50,36 @@ class BackboneBase_Efficient(nn.Module):
     def __init__(self, backbone: nn.Module, num_channels: int, name: str, return_interm_layers: bool):
         super().__init__()
         features = list(backbone.children())
-        if return_interm_layers:
-            layers = []
-            if name == 'efficient_b0':
-                layers.append(features[0])
-                layers.append(features[1])
-                layers.append(features[2][:2])
-                self.body1 = nn.Sequential(*layers)
-                self.body2 = features[2][2]
-                self.body3 = features[2][3:5]
-                self.body4 = features[2][5:]
-        else:
-            if name == 'vgg16_bn':
-                self.body = nn.Sequential(*features[:44])  # 16x down-sample
+        
+        layers = []
+
+        layers.append(features[0])
+        layers.append(features[1])
+        layers.append(features[2][:2])
+        self.body1 = nn.Sequential(*layers)
+        self.body2 = features[2][2]
+        self.body3 = features[2][3:5]
+        self.body4 = features[2][5:]
+            
         self.num_channels = num_channels
         self.return_interm_layers = return_interm_layers
-        self.fpn = FeatsFusion(40, 112, 320, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+        
+        if name == 'efficient_b0': 
+            self.fpn = FeatsFusion(40, 112, 320, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+        elif name == 'efficient_b1': 
+            self.fpn = FeatsFusion(40, 112, 320, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+        elif name == 'efficient_b2': 
+            self.fpn = FeatsFusion(48, 120, 352, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+        elif name == 'efficient_b3': 
+            self.fpn = FeatsFusion(48, 136, 384, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+        elif name == 'efficient_b4': 
+            self.fpn = FeatsFusion(56, 160, 448, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+        elif name == 'efficient_b5': 
+            self.fpn = FeatsFusion(64, 176, 512, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+        elif name == 'efficient_b6': 
+            self.fpn = FeatsFusion(72, 200, 576, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+        elif name == 'efficient_b7': 
+            self.fpn = FeatsFusion(80, 224, 640, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
 
     def forward(self, tensor_list: NestedTensor):
         feats = []

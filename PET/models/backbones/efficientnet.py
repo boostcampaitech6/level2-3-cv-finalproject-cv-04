@@ -28,7 +28,7 @@ def efficient_b5(pretrained=False):
     return timm.create_model("efficientnet_b5", pretrained=pretrained, num_classes=0)
 
 def efficient_b6(pretrained=False):
-    return timm.create_model("efficientnet_b6", pretrained=pretrained, num_classes=0)
+    return timm.create_model("tf_efficientnet_b6", pretrained=pretrained, num_classes=0)
 
 def efficient_b7(pretrained=False):
-    return timm.create_model("efficientnet_b7", pretrained=pretrained, num_classes=0)
+    return timm.create_model("tf_efficientnet_b7", pretrained=pretrained, num_classes=0)
