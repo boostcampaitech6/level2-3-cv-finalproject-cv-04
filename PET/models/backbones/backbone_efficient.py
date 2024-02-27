@@ -11,7 +11,7 @@ from ..position_encoding import build_position_encoding
 
 
 class FeatsFusion(nn.Module):
-    def __init__(self, C3_size, C4_size, C5_size, hidden_size=256, out_size=256, out_kernel=3):
+    def __init__(self, C2_size, C3_size, C4_size, C5_size, hidden_size=256, out_size=256, out_kernel=3):
         super(FeatsFusion, self).__init__()
         self.P5_1 = nn.Conv2d(C5_size, hidden_size, kernel_size=1, stride=1, padding=0)
         self.P5_2 = nn.Conv2d(hidden_size, out_size, kernel_size=out_kernel, stride=1, padding=out_kernel//2)
@@ -22,28 +22,32 @@ class FeatsFusion(nn.Module):
         self.P3_1 = nn.Conv2d(C3_size, hidden_size, kernel_size=1, stride=1, padding=0)
         self.P3_2 = nn.Conv2d(hidden_size, out_size, kernel_size=out_kernel, stride=1, padding=out_kernel//2)
 
-    def forward(self, inputs):
-        C3, C4, C5 = inputs
-        C3_shape, C4_shape, C5_shape = C3.shape[-2:], C4.shape[-2:], C5.shape[-2:]
-        C3_shape, C4_shape, C5_shape = [x * 2 for x in C3_shape], [x * 2 for x in C4_shape], [x * 2 for x in C5_shape]
+        self.P2_1 = nn.Conv2d(C2_size, hidden_size, kernel_size=1, stride=1, padding=0)
+        self.P2_2 = nn.Conv2d(hidden_size, out_size, kernel_size=out_kernel, stride=1, padding=out_kernel//2)
 
-        C5 = F.interpolate(C5, C5_shape)
+    def forward(self, inputs):
+        C2, C3, C4, C5 = inputs
+        C2_shape, C3_shape, C4_shape, C5_shape = C2.shape[-2:], C3.shape[-2:], C4.shape[-2:], C5.shape[-2:]
+
         P5_x = self.P5_1(C5)
         P5_upsampled_x = F.interpolate(P5_x, C4_shape)
         P5_x = self.P5_2(P5_x)
 
-        C4 = F.interpolate(C4, C4_shape)
         P4_x = self.P4_1(C4)
         P4_x = P5_upsampled_x + P4_x
         P4_upsampled_x = F.interpolate(P4_x, C3_shape)
         P4_x = self.P4_2(P4_x)
 
-        C3 = F.interpolate(C3, C3_shape)
         P3_x = self.P3_1(C3)
-        P3_x = P3_x + P4_upsampled_x
+        P3_x = P4_upsampled_x + P3_x
+        P3_upsampled_x = F.interpolate(P3_x, C2_shape)
         P3_x = self.P3_2(P3_x)
+        
+        P2_x = self.P2_1(C2)
+        P2_x = P3_upsampled_x + P2_x
+        P2_x = self.P2_2(P2_x)
 
-        return [P3_x, P4_x, P5_x]
+        return [P2_x, P3_x, P4_x]
 
 
 class BackboneBase_Efficient(nn.Module):
@@ -65,21 +69,21 @@ class BackboneBase_Efficient(nn.Module):
         self.return_interm_layers = return_interm_layers
         
         if name == 'efficient_b0': 
-            self.fpn = FeatsFusion(40, 112, 320, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+            self.fpn = FeatsFusion(24, 40, 112, 320, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
         elif name == 'efficient_b1': 
-            self.fpn = FeatsFusion(40, 112, 320, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+            self.fpn = FeatsFusion(24, 40, 112, 320, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
         elif name == 'efficient_b2': 
-            self.fpn = FeatsFusion(48, 120, 352, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+            self.fpn = FeatsFusion(24, 48, 120, 352, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
         elif name == 'efficient_b3': 
-            self.fpn = FeatsFusion(48, 136, 384, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+            self.fpn = FeatsFusion(32, 48, 136, 384, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
         elif name == 'efficient_b4': 
-            self.fpn = FeatsFusion(56, 160, 448, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+            self.fpn = FeatsFusion(32, 56, 160, 448, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
         elif name == 'efficient_b5': 
-            self.fpn = FeatsFusion(64, 176, 512, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+            self.fpn = FeatsFusion(40, 64, 176, 512, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
         elif name == 'efficient_b6': 
-            self.fpn = FeatsFusion(72, 200, 576, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+            self.fpn = FeatsFusion(40, 72, 200, 576, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
         elif name == 'efficient_b7': 
-            self.fpn = FeatsFusion(80, 224, 640, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
+            self.fpn = FeatsFusion(48, 80, 224, 640, hidden_size=num_channels, out_size=num_channels, out_kernel=3)
 
     def forward(self, tensor_list: NestedTensor):
         feats = []
@@ -90,7 +94,7 @@ class BackboneBase_Efficient(nn.Module):
                 feats.append(xs)
                         
             # feature fusion
-            features_fpn = self.fpn([feats[1], feats[2], feats[3]])
+            features_fpn = self.fpn(feats)
             features_fpn_4x = features_fpn[0]
             features_fpn_8x = features_fpn[1]
 
