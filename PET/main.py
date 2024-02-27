@@ -101,9 +101,11 @@ def main(args):
     random.seed(seed)
     
     # logging with wandb
-    wandb.init(project="project_nota",
-            name=args.wandb_name,
-            config=args)
+    wandb.init(
+        entity="boostcamp_cv4_nota_01",
+        project="nota",
+        name=args.wandb_name,
+        config=args)
 
     # build model
     model, criterion = build_model(args)
