@@ -591,6 +591,8 @@ def build_pet(args):
         backbone = build_backbone_vgg(args)
     elif args.backbone.startswith("efficient"):
         backbone = build_backbone_efficient(args)
+    elif args.backbone.startswith("resnet"):
+        backbone = build_backbone_resnet(args)
     model = PET(
         backbone,
         num_classes=num_classes,
