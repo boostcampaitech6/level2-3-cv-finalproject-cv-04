@@ -50,7 +50,6 @@ class BackboneBase_VGG(nn.Module):
     def __init__(self, backbone: nn.Module, num_channels: int, name: str, return_interm_layers: bool):
         super().__init__()
         features = list(backbone.features.children())
-        breakpoint()
         if return_interm_layers:
             if name == 'vgg11':
                 self.body1 = nn.Sequential(*features[:5])
@@ -173,12 +172,18 @@ class Joiner(nn.Sequential):
         super().__init__(backbone, position_embedding)
 
     def forward(self, tensor_list: NestedTensor):
+        # 여기서 self는 Joiner 자체.
+        # self[0]은 backbone(VGG, Efficient, etc), self[1]은 position_embedding을 의미한다.
+        # PET에서는 position embedding을 Attention is all you need 논문과 같이, cosine으로 만들고, 
+        # img에 맞게 Generalize했다. IMG에서 position embedding을 learnable parameter로 만들어도 어차피 position으로
+        # 학습이 진행되니, 알잘딱 했으리라 생각하고 position_embedding은 믿자.
         xs = self[0](tensor_list)
         out: Dict[NestedTensor] = {}
         pos = {}
         for name, x in xs.items():
             out[name] = x
             # position encoding
+            # nn.Modules로 만들었지만, learnable parameter는 전무하다.
             pos[name] = self[1](x).to(x.tensors.dtype)
         return out, pos
 

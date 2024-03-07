@@ -84,6 +84,12 @@ def get_args_parser():
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     
+    # swin
+    parser.add_argument('--swin', type=int, default=0)
+
+    # swinpool
+    parser.add_argument('--swinpool', type=int, default=0)
+
     # wandb
     parser.add_argument('--wandb_name', type=str, default='default')
     return parser
@@ -102,13 +108,13 @@ def main(args):
     
     # logging with wandb
     wandb.init(
-        entity="boostcamp_cv4_nota_01",
-        project="nota",
+        entity="level2_cv4_dc",
+        project="final-nota",
         name=args.wandb_name,
         config=args)
 
     # build model
-    model, criterion = build_model(args)
+    model, criterion = build_model(args) # 모델 생성
     model.to(device)
     if args.syn_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -146,7 +152,7 @@ def main(args):
         sampler_train, args.batch_size, drop_last=True)
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
-                                collate_fn=utils.collate_fn, num_workers=args.num_workers)
+                                collate_fn=utils.collate_fn, num_workers=args.num_workers) # collate_fn으로 sample들을 NestedTensor로 바꿈
     data_loader_val = DataLoader(dataset_val, 1, sampler=sampler_val,
                                 drop_last=False, collate_fn=utils.collate_fn, num_workers=args.num_workers)
 
