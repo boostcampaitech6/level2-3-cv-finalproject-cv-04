@@ -139,7 +139,7 @@ def main(args):
     print(img.shape)
     
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
-    repetitions = 182
+    repetitions = 1820
     timings = np.zeros((repetitions, 1))
     for _ in range(10):
         _ = model(img, test=True)
