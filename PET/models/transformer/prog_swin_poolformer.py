@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn, Tensor
 from .utils import *
+from timm.models.layers import DropPath
 
 # kwargs : enc_win_list = [(32, 16), (32, 16), (16, 8), (16, 8)]
 # d_model=256, dropout=0.0, nhead=8, dim_feedforward=512,num_encoder_layers=4
@@ -20,18 +21,31 @@ class WinEncoderTransformer(nn.Module):
                  activation="relu", 
                  **kwargs):
         super().__init__()
-        # d_model=256, dropout=0.0, nhead=8, dim_feedforward=512,num_encoder_layers=4, activation='gelu'
-        encoder_layer = EncoderLayer(d_model, nhead, dim_feedforward,
-                                                    dropout, activation)
-        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, **kwargs)
-        self._reset_parameters()
-
+        
         self.d_model = d_model
         self.nhead = nhead
 
         self.enc_win_list = kwargs['enc_win_list']  #[(32, 16), (32, 16), (16, 8), (16, 8)]
         self.return_intermediate = kwargs['return_intermediate'] if 'return_intermediate' in kwargs else False           
 
+        # d_model=256, dropout=0.0, nhead=8, dim_feedforward=512,num_encoder_layers=4, activation='gelu'
+        # transformer encoder 생성
+        # encoder_layer = EncoderLayer(d_model, nhead, dim_feedforward,
+        #                                             dropout, activation)
+        # 4개로 복사뿡뿡
+        # self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, **kwargs)
+        self.encoder = nn.ModuleList([
+            SwinTransformerBlock(dim=d_model, 
+                                 num_heads=nhead,
+                                 window_size = self.enc_win_list[i],
+                                 shift_size=0 if (i % 2 == 0) else (self.enc_win_list[i][0]//2, self.enc_win_list[i][1]//2),
+                                 dim_feedforward=dim_feedforward,
+                                 qkv_bias=True, qk_scale=None,
+                                 drop=dropout, attn_drop=0)
+            for i in range(num_encoder_layers)])
+        self._reset_parameters()
+
+        
     def _reset_parameters(self):
         for p in self.parameters():
             if p.dim() > 1:
@@ -42,19 +56,12 @@ class WinEncoderTransformer(nn.Module):
         
         memeory_list = []
         memeory = src
-        for idx, enc_win_size in enumerate(self.enc_win_list):  # [(32, 16), (32, 16), (16, 8), (16, 8)]
-            # encoder window partition
-            enc_win_w, enc_win_h = enc_win_size
-            memeory_win, pos_embed_win, mask_win  = enc_win_partition(memeory, pos_embed, mask, enc_win_h, enc_win_w)  # [512, 16, 256]
-
-            # encoder forward
-            output = self.encoder.single_forward(memeory_win, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx)
-
-            # reverse encoder window
-            memeory = enc_win_partition_reverse(output, enc_win_h, enc_win_w, h, w)  # memory.shape = [8, 256, 32, 32]
+        for encoder in self.encoder:
+            memeory = encoder(memeory, pos_embed, mask)
             if self.return_intermediate:
                 memeory_list.append(memeory)
         memory_ = memeory_list if self.return_intermediate else memeory
+
         return memory_
 
 
@@ -127,9 +134,10 @@ class WinDecoderTransformer(nn.Module):
         
         # window-rize memory input
         div_ratio = 1 if kwargs['pq_stride'] == 8 else 2
+        # [128, 64, 256], [128, 64, 256], [64, 128]
         memory_win, pos_embed_win, mask_win = enc_win_partition(src, pos_embed, mask, 
                                                     int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
-
+        
         # dynamic decoder forward
         if 'test' in kwargs:
             memory_win = memory_win[:,v_idx]
@@ -158,7 +166,7 @@ class TransformerEncoder(nn.Module):
             self.return_intermediate = kwargs['return_intermediate']
         else:
             self.return_intermediate = False
-    # memeory_win, mask=None, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx
+    
     def single_forward(self, src,
                 mask: Optional[Tensor] = None,
                 src_key_padding_mask: Optional[Tensor] = None,
@@ -167,7 +175,6 @@ class TransformerEncoder(nn.Module):
         
         output = src  # 윈도우화 한 이미지 특징
         layer = self.layers[layer_idx]  # idx번째 인코더 레이어
-        
         output = layer(output, src_mask=mask,
                         src_key_padding_mask=src_key_padding_mask, pos=pos)        
         return output
@@ -255,7 +262,8 @@ class EncoderLayer(nn.Module):
         
         # multihead-Attention 만들기 참 쉽네...
         # q,k,v의 embedding dimension, head만 넣어줘도 뚝딱 만들어 주네 ㅋㅋ
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        # self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        # self.self_attn = WindowAttention(d_model, )
         self.scaled_dot_attn = nn.MultiheadAttention
         
         self.linear1 = nn.Linear(d_model, dim_feedforward)  # 256, 512
@@ -266,9 +274,7 @@ class EncoderLayer(nn.Module):
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
-    # memeory_win, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx
-    # memeory_win, src_mask=None, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx
-    # src: 윈도우화 되서 들어옴[512,16,256]
+
     def forward(self, src,
                      src_mask: Optional[Tensor] = None,
                      src_key_padding_mask: Optional[Tensor] = None,
@@ -279,24 +285,21 @@ class EncoderLayer(nn.Module):
         # encoder self-attention
         # src2 = self.self_attention(q, k, value=src, attn_mask=src_mask,
         #                            key_padding_mask=src_key_padding_mask)[0]
-        # src2.shape: [512, 16, 256]
         src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
                                    key_padding_mask=src_key_padding_mask)[0]
         
         # residual connection & layer normalization
         src = src + src2
         src = self.norm1(src)
-        # src.shape: [512, 16, 256]
+
         # feed forward layer (MLP)
-        # src2.shape: [512, 16, 256]
         src2 = self.linear2(self.activation(self.linear1(src)))
+        
         # residual connection & layer normalization
         src = src + src2
         src = self.norm2(src)
-        return src  # [vactorize window, batch size x windows per image, chennels]
 
-    # PET: window 미리 사전 분할->Encoder로 들어옴->self_attention통과->입력과 output size 같으니
-    # residual connection 후 LN,
+        return src  # [vactorize window, batch size x windows per image, chennels]
 
 
 class DecoderLayer(nn.Module):
@@ -374,6 +377,231 @@ class DecoderLayer(nn.Module):
         return target
 
 
+class WindowAttention(nn.Module):
+    r""" Window based multi-head self attention (W-MSA) module with relative position bias.
+    It supports both of shifted and non-shifted window.
+
+    Args:
+        dim (int): Number of input channels.
+        window_size (tuple[int]): The height and width of the window.
+        num_heads (int): Number of attention heads.
+        qkv_bias (bool, optional):  If True, add a learnable bias to query, key, value. Default: True
+        qk_scale (float | None, optional): Override default qk scale of head_dim ** -0.5 if set
+        attn_drop (float, optional): Dropout ratio of attention weight. Default: 0.0
+        proj_drop (float, optional): Dropout ratio of output. Default: 0.0
+    """
+
+    def __init__(self, dim, window_size, num_heads, qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0.):
+
+        super().__init__()
+        self.dim = dim
+        self.window_size = window_size  # Wh, Ww
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+        self.scale = qk_scale or head_dim ** -0.5
+
+        # self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.self_attn = nn.MultiheadAttention(dim, num_heads, dropout=attn_drop)
+        self.softmax = nn.Softmax(dim=-1)
+
+    def with_pos_embed(self, tensor, pos: Optional[Tensor]):
+        return tensor if pos is None else tensor + pos
+    
+    def forward(self, x, mask=None, pos = None, src_key_padding_mask: Optional[Tensor] = None):
+        """
+        Args:
+            x: input features with shape of (num_windows*B, N, C)
+            mask: (0/-inf) mask with shape of (num_windows, Wh*Ww, Wh*Ww) or None
+        """
+        q = k = self.with_pos_embed(x, pos)
+        x = self.self_attn(q, k, value=x, attn_mask = mask, key_padding_mask=src_key_padding_mask)[0]
+
+        # # reshape() -> [B, Num_window, 3, num_heads, C//num_heads] -> permute: [3, B, num_heads, Num_window, C//num_heads]
+        # qkv = self.qkv(x).reshape(B_, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        # q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
+
+        # q = q * self.scale
+        # attn = (q @ k.transpose(-2, -1))
+        
+
+        # if mask is not None:
+        #     nW = mask.shape[0]
+        #     breakpoint()
+        #     attn = attn.view(B_ // nW, nW, self.num_heads, N, N) + mask.unsqueeze(1).unsqueeze(0)
+        #     attn = attn.view(-1, self.num_heads, N, N)
+        #     attn = self.softmax(attn)
+        # else:
+        #     attn = self.softmax(attn)
+
+        # attn = self.attn_drop(attn)
+
+        # x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
+        # x = self.proj(x)
+        # x = self.proj_drop(x)
+        return x
+
+    def extra_repr(self) -> str:
+        return f'dim={self.dim}, window_size={self.window_size}, num_heads={self.num_heads}'
+
+    def flops(self, N):
+        # calculate flops for 1 window with token length of N
+        flops = 0
+        # qkv = self.qkv(x)
+        flops += N * self.dim * 3 * self.dim
+        # attn = (q @ k.transpose(-2, -1))
+        flops += self.num_heads * N * (self.dim // self.num_heads) * N
+        #  x = (attn @ v)
+        flops += self.num_heads * N * N * (self.dim // self.num_heads)
+        # x = self.proj(x)
+        flops += N * self.dim * self.dim
+        return flops
+
+
+class Mlp(nn.Module):
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
+    
+
+class SwinTransformerBlock(nn.Module):
+    r""" Swin Transformer Block.
+
+    Args:
+        dim (int): Number of input channels.
+        num_heads (int): Number of attention heads.
+        window_size (int): Window size.
+        shift_size (int): Shift size for SW-MSA.
+        mlp_ratio (float): Ratio of mlp hidden dim to embedding dim.
+        qkv_bias (bool, optional): If True, add a learnable bias to query, key, value. Default: True
+        qk_scale (float | None, optional): Override default qk scale of head_dim ** -0.5 if set.
+        drop (float, optional): Dropout rate. Default: 0.0
+        attn_drop (float, optional): Attention dropout rate. Default: 0.0
+        drop_path (float, optional): Stochastic depth rate. Default: 0.0
+        act_layer (nn.Module, optional): Activation layer. Default: nn.GELU
+        norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
+        fused_window_process (bool, optional): If True, use one kernel to fused window shift & window partition for acceleration, similar for the reversed part. Default: False
+    """
+
+    def __init__(self, dim, num_heads, window_size=7, shift_size=0,
+                 dim_feedforward=256., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
+                 act_layer=nn.GELU, norm_layer=nn.LayerNorm,
+                 fused_window_process=False, pool_size=3):
+        super().__init__()
+        self.dim = dim
+        self.num_heads = num_heads
+        self.window_size = window_size
+        self.shift_size = shift_size
+        self.dim_feedforward = dim_feedforward
+
+        self.norm1 = norm_layer(dim)
+        self.poolformer = Pooling(pool_size=pool_size)
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.norm2 = norm_layer(dim)
+        self.mlp = Mlp(in_features=dim, hidden_features=dim_feedforward, act_layer=act_layer, drop=drop)
+
+        self.fused_window_process = fused_window_process
+
+    def forward(self, x, pos_embed, mask):
+        
+        B, C, H, W = x.shape
+        x = x.permute(0,2,3,1)
+        enc_win_h, enc_win_w = self.window_size
+        
+        shortcut = x
+        x = self.norm1(x)
+        x = x.permute(0,3,1,2)
+
+        # cyclic shift
+        if self.shift_size != 0:
+            if not self.fused_window_process:
+                shifted_x = torch.roll(x, shifts=(-self.shift_size[0], -self.shift_size[1]), dims=(2, 3))
+                shifted_pos = torch.roll(pos_embed, shifts=(-self.shift_size[0], -self.shift_size[1]), dims=(2, 3))
+                shifted_mask = torch.roll(mask, shifts=(-self.shift_size[0], -self.shift_size[1]), dims=(1, 2))
+                # partition windows
+                x_windows, pos_embed_win, mask_win = enc_win_partition(shifted_x, shifted_pos, shifted_mask, enc_win_h, enc_win_w)
+            else:
+                x_windows, pos_embed_win, mask_win = enc_win_partition(shifted_x, shifted_pos, shifted_mask, enc_win_h, enc_win_w)
+        else:
+            shifted_x = x
+            shifted_mask = mask
+            shifted_pos = pos_embed
+            # partition windows
+            x_windows, pos_embed_win, mask_win = enc_win_partition(shifted_x, shifted_pos, shifted_mask, enc_win_h, enc_win_w)
+        # x_windows: [512, 16, 256]
+        # W-MSA/SW-MSA
+        # attn_windows.shape: [512, 16, 256]
+        attn_windows = self.poolformer(x_windows)  # nW*B, window_size*window_size, C
+
+        # merge windows -> nn.MultiheadAttention써서 merge되서 나온다!
+        # attn_windows = enc_win_partition_reverse(attn_windows, enc_win_h, enc_win_w, H, W)
+        
+        # reverse cyclic shift
+        if self.shift_size != 0:
+            if not self.fused_window_process:
+                shifted_x = enc_win_partition_reverse(attn_windows, enc_win_h, enc_win_w, H, W)  
+                x = torch.roll(shifted_x, shifts=(self.shift_size[0], self.shift_size[1]), dims=(2, 3))
+            else:
+                x = enc_win_partition_reverse(attn_windows, enc_win_h, enc_win_w, H, W)
+        else:
+            shifted_x = enc_win_partition_reverse(attn_windows, enc_win_h, enc_win_w, H, W) 
+            x = shifted_x
+        x = x.permute(0,2,3,1)
+        # residual connection
+        x = shortcut + self.drop_path(x)
+
+        # FFN
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        
+        x = x.permute(0,3,1,2)
+        
+        return x
+
+    def extra_repr(self) -> str:
+        return f"dim={self.dim}, input_resolution={self.input_resolution}, num_heads={self.num_heads}, " \
+               f"window_size={self.window_size}, shift_size={self.shift_size}, mlp_ratio={self.mlp_ratio}"
+
+    def flops(self):
+        flops = 0
+        H, W = self.input_resolution
+        # norm1
+        flops += self.dim * H * W
+        # W-MSA/SW-MSA
+        nW = H * W / self.window_size / self.window_size
+        flops += nW * self.attn.flops(self.window_size * self.window_size)
+        # mlp
+        flops += 2 * H * W * self.dim * self.dim * self.mlp_ratio
+        # norm2
+        flops += self.dim * H * W
+        return flops    
+
+
+class Pooling(nn.Module):
+    """
+    Implementation of pooling for PoolFormer
+    --pool_size: pooling size
+    """
+    def __init__(self, pool_size=3):
+        super().__init__()
+        self.pool = nn.AvgPool2d(
+            pool_size, stride=1, padding=pool_size//2, count_include_pad=False)
+
+    def forward(self, x):
+        return self.pool(x) - x
+
+    
 def _get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
