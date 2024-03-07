@@ -231,18 +231,6 @@ class TransformerDecoder(nn.Module):
 
         return output.unsqueeze(0)
 
-class Pooling(nn.Module):
-    """
-    Implementation of pooling for PoolFormer
-    --pool_size: pooling size
-    """
-    def __init__(self, pool_size=3):
-        super().__init__()
-        self.pool = nn.AvgPool2d(
-            pool_size, stride=1, padding=pool_size//2, count_include_pad=False)
-
-    def forward(self, x):
-        return self.pool(x) - x
 
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=512, dropout=0.0,
@@ -259,8 +247,7 @@ class EncoderLayer(nn.Module):
         # self.layer_normalization2 = nn.LayerNorm(d_model)
         # self.activation = _get_activation_fn(activation)
         
-        # self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.pool = Pooling()
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.scaled_dot_attn = nn.MultiheadAttention
         
         self.linear1 = nn.Linear(d_model, dim_feedforward)  # 256, 512
@@ -282,9 +269,9 @@ class EncoderLayer(nn.Module):
         # encoder self-attention
         # src2 = self.self_attention(q, k, value=src, attn_mask=src_mask,
         #                            key_padding_mask=src_key_padding_mask)[0]
-        # src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
-        #                            key_padding_mask=src_key_padding_mask)[0]
-        src2 = self.pool(src)
+        src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
+                                   key_padding_mask=src_key_padding_mask)[0]
+        
         # residual connection & layer normalization
         src = src + src2
         src = self.norm1(src)
