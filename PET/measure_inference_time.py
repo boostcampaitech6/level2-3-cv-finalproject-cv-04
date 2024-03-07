@@ -68,6 +68,13 @@ def get_args_parser():
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+    
+    # swin
+    parser.add_argument('--swin', type=int, default=0)
+    
+    # swinpool
+    parser.add_argument('--swinpool', type=int, default=0)
+
     return parser
 
 
@@ -92,6 +99,19 @@ def main(args):
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print('params:', n_parameters/1e6)
+
+    # build dataset
+    val_image_set = 'val'
+    dataset_val = build_dataset(image_set=val_image_set, args=args)
+
+    if args.distributed:
+        sampler_val = DistributedSampler(dataset_val, shuffle=False)
+    else:
+        sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+
+    data_loader_val = DataLoader(dataset_val, 1, sampler=sampler_val,
+                                 drop_last=False, collate_fn=utils.collate_fn, num_workers=args.num_workers)
+
 
     # load pretrained model
     if args.resume:
@@ -119,19 +139,24 @@ def main(args):
     print(img.shape)
     
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
-    repetitions = 1000
+    repetitions = 182
     timings = np.zeros((repetitions, 1))
     for _ in range(10):
         _ = model(img, test=True)
 
+    model.eval()
+    rep=0
     with torch.no_grad():
-        for rep in tqdm(range(repetitions)):
-            starter.record()
-            test_stats = model(img, test=True)
-            ender.record()
-            torch.cuda.synchronize()
-            curr_time = starter.elapsed_time(ender)
-            timings[rep] = curr_time
+        for _ in range(10):
+            for img, _ in tqdm(data_loader_val):
+                img = img.to(device)
+                starter.record()
+                test_stats = model(img, test=True)
+                ender.record()
+                torch.cuda.synchronize()
+                curr_time = starter.elapsed_time(ender)
+                timings[rep] = curr_time
+                rep+=1
             
 
     mean_syn = np.sum(timings) / repetitions

@@ -50,7 +50,6 @@ class BackboneBase_VGG(nn.Module):
     def __init__(self, backbone: nn.Module, num_channels: int, name: str, return_interm_layers: bool):
         super().__init__()
         features = list(backbone.features.children())
-        breakpoint()
         if return_interm_layers:
             if name == 'vgg11':
                 self.body1 = nn.Sequential(*features[:5])

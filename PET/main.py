@@ -102,8 +102,8 @@ def main(args):
     
     # logging with wandb
     wandb.init(
-        entity="boostcamp_cv4_nota_01",
-        project="nota",
+        entity="level2_cv4_dc",
+        project="final-nota",
         name=args.wandb_name,
         config=args)
 
