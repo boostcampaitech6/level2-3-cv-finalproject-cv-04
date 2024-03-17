@@ -14,9 +14,6 @@ class HydraAttention(nn.Module):
         self.embed_dim = embed_dim
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
-        self.num_heads = num_heads
-        self.head_dim = embed_dim // num_heads
-        assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
         self.bias = bias
 
         self.in_proj_weight = Parameter(torch.empty((3 * embed_dim, embed_dim), **factory_kwargs))
@@ -54,7 +51,7 @@ class HydraAttention(nn.Module):
             assert key_padding_mask.shape == (bsz, src_len), \
                 f"expecting key_padding_mask shape of {(bsz, src_len)}, but got {key_padding_mask.shape}"
             key_padding_mask = key_padding_mask.view(bsz, 1, 1, src_len).   \
-                expand(-1, self.num_heads, -1, -1).reshape(bsz * self.num_heads, src_len, 1)
+                expand(-1, 1, -1, -1).reshape(bsz, src_len, 1)
             if attn_mask is None:
                 attn_mask = key_padding_mask
             else:
@@ -62,9 +59,9 @@ class HydraAttention(nn.Module):
 
         # Apply projections with bias to x for q, k, v
         q, k, v = nn.functional._in_projection_packed(query, key, value, self.in_proj_weight, self.in_proj_bias)
-        q = q.view(tgt_len, bsz * self.num_heads, self.head_dim).transpose(0, 1) # 128, 512 -> tgt_len, 32 -> head_dim
-        k = k.view(k.shape[0], bsz * self.num_heads, self.head_dim).transpose(0, 1) # 4096, 512, 1 because head is 256
-        v = v.view(v.shape[0], bsz * self.num_heads, self.head_dim).transpose(0, 1)
+        q = q.view(tgt_len, bsz, self.embed_dim).transpose(0, 1) # 128, 512 -> tgt_len, 32 -> head_dim
+        k = k.view(k.shape[0], bsz, self.embed_dim).transpose(0, 1) # 4096, 512, 1 because head is 256
+        v = v.view(v.shape[0], bsz, self.embed_dim).transpose(0, 1)
 
         # Normalize q and k
         q = q / q.norm(dim=-1, keepdim=True)
