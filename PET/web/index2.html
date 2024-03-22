@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Image Upload and Processing</title>
+</head>
+<body>
+    <div id="drop-area">Drop your image here</div>
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('drop-area').addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            let files = e.dataTransfer.files;
+            const formData = new FormData();
+            formData.append('file', files[0]);
+
+            fetch('/process-image', {
+                method: 'POST',
+                body: formData,
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('result').innerText = data.result;
+            })
+            .catch(error => console.error('Error:', error));
+        }, false);
+    </script>
+</body>
+</html>
