@@ -1,0 +1,189 @@
+<!DOCTYPE HTML>
+<!--
+	Hyperspace by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>Hyperspace by HTML5 UP</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+
+		<!-- <style>
+			#dynamic-image {
+				display: block; /* 또는 display: flex; */
+				width: 400px; /* 부모 요소의 전체 너비를 차지 */
+				height: 360px; /* 이미지의 비율을 유지 */
+			}
+		</style> -->
+
+		<style>
+			#result {
+				color: black; /* 텍스트 색상을 빨간색으로 변경 */
+				font-size: 40px; /* 글자 크기를 20px로 변경 */
+			}
+			#result_2 {
+				color: black; /* 텍스트 색상을 빨간색으로 변경 */
+				font-size: 40px; /* 글자 크기를 20px로 변경 */
+			}
+			.flex-container {
+				display: flex;
+				align-items: flex-start; /* 자식 요소들을 컨테이너의 시작점에 정렬 */
+				justify-content: flex-start; /* 왼쪽 정렬 */
+				gap: 20px; /* 요소들 사이의 간격 */
+			}
+		
+			.drop-area {
+				border: 2px dashed #ccc;
+				border-radius: 20px;
+				width: 600px;
+				height: 400px;
+				padding: 5px;
+				text-align: center;
+				line-height: 200px;
+				color: #ccc;
+				/* margin: auto; 제거 */
+			}
+		</style>
+
+	</head>
+	<body class="is-preload">
+
+		<!-- Sidebar -->
+			<section id="sidebar">
+				<div class="inner">
+					<nav>
+						<ul>
+							<li><a href="#intro">Check In</a></li>
+							<li><a href="#one">Check Out</a></li>
+						</ul>
+					</nav>
+				</div>
+			</section>
+
+		<!-- Wrapper -->
+			<div id="wrapper">
+
+				<!-- Intro -->
+					<section id="intro" class="wrapper style1 fullscreen fade-up">
+						<div class="inner">
+							<h1>Outlier</h1>
+							<div class="flex-container"> <!-- Flex 컨테이너 추가 -->
+								<div class="drop-area" id="drop-area">Drag & Drop</div>
+								<div>
+									<ul class="actions">
+										<li><a href="#one" class="button scrolly">Result</a></li>
+							</ul>
+						</div>
+					</section>
+
+				<!-- One -->
+					<section id="one" class="wrapper style2 spotlights">
+						<section>
+							<a href="#" class="image" id="dynamic-image"></a>
+							<div class="content">
+								<div class="inner">
+									<h2>Mean Time</h2>
+									<div id="result">여기에 결과가 표시됩니다.</div>
+								</div>
+							</div>
+						</section>
+						<section>
+							<a href="#" class="image" id="dynamic-image_2"></a>
+							<div class="content">
+								<div class="inner">
+									<h2>Mean Time(Ours)</h2>
+									<div id="result_2">여기에 결과가 표시됩니다.</div>
+								</div>
+							</div>
+						</section>
+
+			</div>
+
+		<!-- Footer -->
+			<footer id="footer" class="wrapper style1-alt">
+				<div class="inner">
+					<ul class="menu">
+						<li>&copy; Untitled. All rights reserved.</li><li>Design: <a href="http://html5up.net">HTML5 UP</a></li>
+					</ul>
+				</div>
+			</footer>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/jquery.scrollex.min.js"></script>
+			<script src="assets/js/jquery.scrolly.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+			<script>
+				document.getElementById('drop-area').addEventListener('dragover', function(e) {
+					e.preventDefault();
+					e.stopPropagation();
+					this.style.backgroundColor = '#f0f0f0';
+				}, false);
+				
+				document.getElementById('drop-area').addEventListener('dragleave', function(e) {
+					e.preventDefault();
+					e.stopPropagation();
+					this.style.backgroundColor = '';
+				}, false);
+				
+				document.getElementById('drop-area').addEventListener('drop', function(e) {
+					e.preventDefault();
+					e.stopPropagation();
+					this.style.backgroundColor = '';
+				
+					let files = e.dataTransfer.files;
+					const formData = new FormData();
+					formData.append('file', files[0]); // 첫 번째 드롭된 파일을 처리합니다.
+				
+					// Fetch API를 사용하여 서버에 파일 전송
+					fetch('/process-image', {
+						method: 'POST',
+						body: formData,
+					})
+					.then(response => response.json())
+					.then(data => {
+						// 서버로부터 받은 응답을 처리
+						console.log(data);
+						// 예: 결과를 화면에 표시
+						document.getElementById('result').textContent = data.mean_syn;
+						document.getElementById('result_2').textContent = data.mean_syn_2;
+
+						const imageElement = document.createElement('img');
+						imageElement.src = 'data:image/jpeg;base64,' + data.image_data;
+						imageElement.alt = "Processed Image";
+
+						imageElement.style.width = "100%"; // 부모 요소 너비의 최대 100%
+						// imageElement.style.maxHeight = "400px"; // 최대 높이 400px
+						imageElement.style.height = "100%"; // 높이 자동 조정으로 비율 유지
+
+						const imageContainer = document.getElementById('dynamic-image');
+						imageContainer.innerHTML = ''; // 기존의 내용을 지움
+						imageContainer.appendChild(imageElement); // 이미지를 <a> 태그 안에 추가
+
+						const imageElement_2 = document.createElement('img');
+						imageElement_2.src = 'data:image/jpeg;base64,' + data.image_data_2;
+						imageElement_2.alt = "Processed Image";
+
+						imageElement_2.style.width = "100%"; // 부모 요소 너비의 최대 100%
+						// imageElement.style.maxHeight = "400px"; // 최대 높이 400px
+						imageElement_2.style.height = "100%"; // 높이 자동 조정으로 비율 유지
+
+						// 이미지를 동적으로 추가할 위치를 찾고 이미지 태그를 추가
+						const imageContainer_2 = document.getElementById('dynamic-image_2');
+						imageContainer_2.innerHTML = ''; // 기존의 내용을 지움
+						imageContainer_2.appendChild(imageElement_2); // 이미지를 <a> 태그 안에 추가
+						
+					})
+					.catch(error => console.error('Error:', error));
+				}, false);
+				</script>
+
+	</body>
+</html>
