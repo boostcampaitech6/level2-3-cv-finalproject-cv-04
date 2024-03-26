@@ -1,4 +1,4 @@
-# (주) 노타 기업 연계 프로젝트
+# (주)노타 - 군중 계수(Crowd Counting) 모델의 계산 효율성을 위한 경량 모델링 기업 연계 프로젝트
 
 <a href="./assets/docs/[최종] NLP_06조_생성형 검색을 위한 프롬프트 경량화.pdf"><img src="https://img.shields.io/badge/Presentation-FFFFFF?style=for-the-badge&logo=microsoftpowerpoint&logoColor=B7472A"/></a> <a href="https://docs.google.com/document/d/1vW2N35_0SOVTO9TCv5H0HOLWqqaqKl9cWBU_NhqpHi4/edit?usp=sharing"><img src="https://img.shields.io/badge/Wrapup report-FFFFFF?style=for-the-badge&logo=googlesheets&logoColor=34A853"/></a> <a href="https://synonymous-ton-89f.notion.site/CV-04-CPU-GPU-Transformer-a7d0dac501cd42dfb273d47ea04ac6ab?pvs=4"><img src="https://img.shields.io/badge/Project summary-FFFFFF?style=for-the-badge&logo=notion&logoColor=000000"/></a>
 
