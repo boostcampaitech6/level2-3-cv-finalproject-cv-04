@@ -1,6 +1,6 @@
 # (주)노타 - 군중 계수(Crowd Counting) 모델의 계산 효율성을 위한 경량 모델링 기업 연계 프로젝트
 
-<a href="https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/files/14772165/CV_4._Nota_.pdf"><img src="https://img.shields.io/badge/Presentation-FFFFFF?style=for-the-badge&logo=microsoftpowerpoint&logoColor=B7472A"/></a> <a href="https://synonymous-ton-89f.notion.site/Wrap-up-Reports-00e278b91e4c435e98433cff09d40f8a?pvs=4"><img src="https://img.shields.io/badge/Wrapup report-FFFFFF?style=for-the-badge&logo=googlesheets&logoColor=34A853"/></a> <a href="https://boostcampait.notion.site/CV-04-4f73bd9cbb4d483a9f424b82db49bcfa"><img src="https://img.shields.io/badge/Project summary-FFFFFF?style=for-the-badge&logo=notion&logoColor=000000"/></a>
+<a href="https://youtu.be/LCf51tyPkoY"><img src="https://img.shields.io/badge/Presentation video-FFFFFF?style=for-the-badge&logo=youtube&logoColor=ff0000"/></a> <a href="https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/files/14772165/CV_4._Nota_.pdf"><img src="https://img.shields.io/badge/Presentation-FFFFFF?style=for-the-badge&logo=microsoftpowerpoint&logoColor=B7472A"/></a> <a href="https://synonymous-ton-89f.notion.site/Wrap-up-Reports-00e278b91e4c435e98433cff09d40f8a?pvs=4"><img src="https://img.shields.io/badge/Wrapup report-FFFFFF?style=for-the-badge&logo=googlesheets&logoColor=34A853"/></a> <a href="https://boostcampait.notion.site/CV-04-4f73bd9cbb4d483a9f424b82db49bcfa"><img src="https://img.shields.io/badge/Project summary-FFFFFF?style=for-the-badge&logo=notion&logoColor=000000"/></a>
 
 ## Overview
 
@@ -32,7 +32,7 @@ Crowd Counting을 decomposable point querying process로 정의합니다. sparse
 |BaseModel|52.32|69.02|19.01|20.91|
 |PET-CRT|51.34|**47.2**|14.02|**18.08**|
 - MAE **2.12% 향상**
-- 추론 속도 **46.22% 개선**
+- 추론 속도 **31.61% 개선**
   
 ## Members
 |<img src='https://imgur.com/ozd1yor.jpg' height=100 width=100px></img>|<img src='https://imgur.com/GXteBDS.jpg' height=100 width=100px></img>|<img src='https://imgur.com/aMVcwCF.jpg' height=100 width=100px></img>|<img src='https://imgur.com/F6ZfcEl.jpg' height=100 width=100px></img>|<img src='https://imgur.com/ZSVCV82.jpg' height=100 width=100px></img>|<img src='https://imgur.com/GBdY0k4.jpg' height=100 width=100px></img>|
