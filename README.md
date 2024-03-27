@@ -1,6 +1,6 @@
 # (주)노타 - 군중 계수(Crowd Counting) 모델의 계산 효율성을 위한 경량 모델링 기업 연계 프로젝트
 
-<a href="./assets/docs/[최종] NLP_06조_생성형 검색을 위한 프롬프트 경량화.pdf"><img src="https://img.shields.io/badge/Presentation-FFFFFF?style=for-the-badge&logo=microsoftpowerpoint&logoColor=B7472A"/></a> <a href="https://docs.google.com/document/d/1vW2N35_0SOVTO9TCv5H0HOLWqqaqKl9cWBU_NhqpHi4/edit?usp=sharing"><img src="https://img.shields.io/badge/Wrapup report-FFFFFF?style=for-the-badge&logo=googlesheets&logoColor=34A853"/></a> <a href="https://synonymous-ton-89f.notion.site/CV-04-CPU-GPU-Transformer-a7d0dac501cd42dfb273d47ea04ac6ab?pvs=4"><img src="https://img.shields.io/badge/Project summary-FFFFFF?style=for-the-badge&logo=notion&logoColor=000000"/></a>
+<a href="https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/files/14772165/CV_4._Nota_.pdf"><img src="https://img.shields.io/badge/Presentation-FFFFFF?style=for-the-badge&logo=microsoftpowerpoint&logoColor=B7472A"/></a> <a href="https://synonymous-ton-89f.notion.site/Wrap-up-Reports-00e278b91e4c435e98433cff09d40f8a?pvs=4"><img src="https://img.shields.io/badge/Wrapup report-FFFFFF?style=for-the-badge&logo=googlesheets&logoColor=34A853"/></a> <a href="https://boostcampait.notion.site/CV-04-4f73bd9cbb4d483a9f424b82db49bcfa"><img src="https://img.shields.io/badge/Project summary-FFFFFF?style=for-the-badge&logo=notion&logoColor=000000"/></a>
 
 ## Overview
 
@@ -17,9 +17,23 @@ Crowd Counting을 decomposable point querying process로 정의합니다. sparse
 - Transformer 기반의 군중 계수 SOTA 모델인 PET 모델을 구성하는 레이어/블록을 재설계하여 모델의 정확도를 최대한 유지하면서도, CPU/GPU에서의 추론속도를 개선
 - 성능 지표는 MAE(Mean Absolute Error)로 BaseModel Mae에서 <span class="plusminus">&plusmn;3</span>의 오차범위 내에서 Inference Time 최대한 감소
 
-## Result
+## PET-CRT (Point quEry Transformer with Contextual cRowd counTing)
+최종 결과로 다음과 같이 경량화된 PET구조를 제안합니다.
 
+![](https://imgur.com/kD7V5rV.jpg)
 
+- Only Encoder
+- Multihead Self-Attention → HiLo with Pooling Attention
+- Additional Residual Connection & Normalization
+
+### Result
+|Method|MAE|Inference Time(ms)|Std Dev|Parameters(M)|
+|---|---|---|---|---|
+|BaseModel|52.32|69.02|19.01|20.91|
+|PET-CRT|51.34|**47.2**|14.02|**18.08**|
+- MAE **2.12% 향상**
+- 추론 속도 **46.22% 개선**
+  
 ## Members
 |<img src='https://imgur.com/ozd1yor.jpg' height=100 width=100px></img>|<img src='https://imgur.com/GXteBDS.jpg' height=100 width=100px></img>|<img src='https://imgur.com/aMVcwCF.jpg' height=100 width=100px></img>|<img src='https://imgur.com/F6ZfcEl.jpg' height=100 width=100px></img>|<img src='https://imgur.com/ZSVCV82.jpg' height=100 width=100px></img>|<img src='https://imgur.com/GBdY0k4.jpg' height=100 width=100px></img>|
 |:---:|:---:|:---:|:---:|:---:|:---:|
@@ -42,6 +56,6 @@ Crowd Counting을 decomposable point querying process로 정의합니다. sparse
 <img width="80%" src="https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/assets/82288357/df833f79-de46-440b-b2a0-2af97489cab8.gif"/>
 
 ## Detail
-- [발표 자료]()
-- [프로젝트 랩업 리포트]()
-- [프로젝트 소개 노션 페이지](https://synonymous-ton-89f.notion.site/CV-04-CPU-GPU-Transformer-a7d0dac501cd42dfb273d47ea04ac6ab?pvs=4)
+- [발표 자료](https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/files/14772165/CV_4._Nota_.pdf)
+- [프로젝트 랩업 리포트](https://synonymous-ton-89f.notion.site/Wrap-up-Reports-00e278b91e4c435e98433cff09d40f8a?pvs=4)
+- [프로젝트 소개 노션 페이지](https://boostcampait.notion.site/CV-04-4f73bd9cbb4d483a9f424b82db49bcfa)
