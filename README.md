@@ -3,12 +3,16 @@
 
 <a href="https://youtu.be/LCf51tyPkoY"><img src="https://img.shields.io/badge/Presentation video-FFFFFF?style=for-the-badge&logo=youtube&logoColor=ff0000"/></a> <a href="https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/files/14772165/CV_4._Nota_.pdf"><img src="https://img.shields.io/badge/Presentation-FFFFFF?style=for-the-badge&logo=microsoftpowerpoint&logoColor=B7472A"/></a> <a href="https://synonymous-ton-89f.notion.site/Wrap-up-Reports-00e278b91e4c435e98433cff09d40f8a?pvs=4"><img src="https://img.shields.io/badge/Wrapup report-FFFFFF?style=for-the-badge&logo=googlesheets&logoColor=34A853"/></a> <a href="https://boostcampait.notion.site/CV-04-4f73bd9cbb4d483a9f424b82db49bcfa"><img src="https://img.shields.io/badge/Project summary-FFFFFF?style=for-the-badge&logo=notion&logoColor=000000"/></a>
 
-## Overview
+## Overview of PET-CRT
 
 ![image](https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/assets/46666296/deade5da-6185-47ca-afde-d00425a2e676)
+## [**PET(Point quEry Transformer)**](https://arxiv.org/abs/2308.13814)  
 
-## [**PET(Point quEry Transformer)**](https://arxiv.org/abs/2308.13814)
-![](https://imgur.com/WmgUquE.jpg)
+## Architecture
+
+![image](https://imgur.com/WRqbmgF.jpg)  
+
+![](https://imgur.com/WmgUquE.jpg)  
 Crowd Counting을 decomposable point querying process로 정의합니다. sparse input points는 필요시 4개의 new points로 split될 수 있습니다. 이러한 formulation은 많은 appealing properties를 보여줍니다.
 - Intuitive: Input과 Output 모두 interpretable하고 steerable합니다.
 - Generic: PET는 Input format을 간단히 조정함으로써, 다양한 crowd-related tasks에 적용할 수 있습니다.
