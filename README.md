@@ -1,10 +1,11 @@
 # (주)노타 - 군중 계수(Crowd Counting) 모델의 계산 효율성을 위한 경량 모델링 기업 연계 프로젝트
 
+
 <a href="https://youtu.be/LCf51tyPkoY"><img src="https://img.shields.io/badge/Presentation video-FFFFFF?style=for-the-badge&logo=youtube&logoColor=ff0000"/></a> <a href="https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/files/14772165/CV_4._Nota_.pdf"><img src="https://img.shields.io/badge/Presentation-FFFFFF?style=for-the-badge&logo=microsoftpowerpoint&logoColor=B7472A"/></a> <a href="https://synonymous-ton-89f.notion.site/Wrap-up-Reports-00e278b91e4c435e98433cff09d40f8a?pvs=4"><img src="https://img.shields.io/badge/Wrapup report-FFFFFF?style=for-the-badge&logo=googlesheets&logoColor=34A853"/></a> <a href="https://boostcampait.notion.site/CV-04-4f73bd9cbb4d483a9f424b82db49bcfa"><img src="https://img.shields.io/badge/Project summary-FFFFFF?style=for-the-badge&logo=notion&logoColor=000000"/></a>
 
 ## Overview
 
-<img src="https://imgur.com/WRqbmgF.jpg" alt="PET Architecture" style="width:100%;">
+![image](https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/assets/46666296/deade5da-6185-47ca-afde-d00425a2e676)
 
 ## [**PET(Point quEry Transformer)**](https://arxiv.org/abs/2308.13814)
 ![](https://imgur.com/WmgUquE.jpg)
