@@ -49,6 +49,10 @@ def get_args_parser():
                         help="Dropout applied in the transformer")
     parser.add_argument('--nheads', default=8, type=int,
                         help="Number of attention heads inside the transformer's attentions")
+    parser.add_argument('--transformer_method', default="basic", type=str, help="select your method")
+    
+    # - pet
+    parser.add_argument('--pet_method', default="basic", type=str, help="select your method")
 
     # loss parameters
     # - matcher
@@ -75,7 +79,7 @@ def get_args_parser():
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
-    parser.add_argument('--num_workers', default=2, type=int)
+    parser.add_argument('--num_workers', default=8, type=int)
     parser.add_argument('--eval_freq', default=1, type=int)
     parser.add_argument('--syn_bn', default=0, type=int)
 
@@ -84,14 +88,9 @@ def get_args_parser():
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     
-    # swin
-    parser.add_argument('--swin', type=int, default=0)
-
-    # swinpool
-    parser.add_argument('--swinpool', type=int, default=0)
-
     # wandb
     parser.add_argument('--wandb_name', type=str, default='default')
+    parser.add_argument('--use_wandb', type=int, default=1)
     return parser
 
 
@@ -107,23 +106,25 @@ def main(args):
     random.seed(seed)
     
     # logging with wandb
-    wandb.init(
-        entity="level2_cv4_dc",
-        project="final-nota",
-        name=args.wandb_name,
-        config=args)
+    if args.use_wandb:
+        wandb.init(
+            entity="level2_cv4_dc",
+            project="final-nota",
+            name=args.wandb_name,
+            config=args)
 
     # build model
-    model, criterion = build_model(args) # 모델 생성
+    model, criterion = build_model(args)
     model.to(device)
-    if args.syn_bn:
+    if args.syn_bn:  # 안씀
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
     
-    model_without_ddp = model
-    if args.distributed:
+    model_without_ddp = model  # 안씀
+    if args.distributed:  # 안씀
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('params:', n_parameters/1e6)
 
     # build optimizer
     param_dicts = [
@@ -144,7 +145,7 @@ def main(args):
     if args.distributed:
         sampler_train = DistributedSampler(dataset_train)
         sampler_val = DistributedSampler(dataset_val, shuffle=False)
-    else:
+    else:  # 무조건 이쪽으로
         sampler_train = torch.utils.data.RandomSampler(dataset_train)
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
@@ -152,11 +153,11 @@ def main(args):
         sampler_train, args.batch_size, drop_last=True)
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
-                                collate_fn=utils.collate_fn, num_workers=args.num_workers) # collate_fn으로 sample들을 NestedTensor로 바꿈
+                                collate_fn=utils.collate_fn, num_workers=args.num_workers)
     data_loader_val = DataLoader(dataset_val, 1, sampler=sampler_val,
                                 drop_last=False, collate_fn=utils.collate_fn, num_workers=args.num_workers)
 
-    # output directory and log 
+    # output directory and log
     if utils.is_main_process:
         output_dir = os.path.join("./outputs", args.dataset_file, args.output_dir)
         os.makedirs(output_dir, exist_ok=True)
@@ -169,7 +170,7 @@ def main(args):
 
     # resume
     best_mae, best_epoch = 1e8, 0
-    if args.resume:
+    if args.resume:  # 안씀
         if args.resume.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.resume, map_location='cpu', check_hash=True)
@@ -187,7 +188,7 @@ def main(args):
     print("Start training")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
-        if args.distributed:
+        if args.distributed:  # 안씀
             sampler_train.set_epoch(epoch)
         
         t1 = time.time()
@@ -226,8 +227,9 @@ def main(args):
                 f.write(json.dumps(log_stats) + "\n")
         
         # logging with wandb
-        wandb.log({**{f"{k}":v for k, v in train_stats.items()},
-                  "epoch":epoch+1})
+        if args.use_wandb:
+            wandb.log({**{f"{k}":v for k, v in train_stats.items()},
+                    "epoch":epoch+1})
 
         # evaluation
         if epoch % args.eval_freq == 0 and epoch > 0:
@@ -255,10 +257,11 @@ def main(args):
                 shutil.copyfile(src_path, dst_path)
             
             # logging with wandb
-            wandb.log({
-                "MAE":mae,
-                "MSE":mse
-            })
+            if args.use_wandb:
+                wandb.log({
+                    "MAE":mae,
+                    "MSE":mse
+                })
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
