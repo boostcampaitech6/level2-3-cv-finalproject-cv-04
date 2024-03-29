@@ -77,7 +77,18 @@ def build_encoder(args, **kwargs):
             downsample=PatchMerging,
             **kwargs,
         )
-    else:
+    elif args.transformer_method == 'HiLo':
+        from .prog_win_transformer_HiLo_encoder import WinEncoderTransformer
+        return WinEncoderTransformer(
+            d_model=args.hidden_dim,
+            dropout=args.dropout,
+            nhead=args.nheads,
+            dim_feedforward=args.dim_feedforward,
+            num_encoder_layers=args.enc_layers,
+            activation="gelu",  #### CHANGE
+            **kwargs,
+        )
+    else: # if Encoder is Basic
         from .prog_win_transformer import WinEncoderTransformer
         return WinEncoderTransformer(
             d_model=args.hidden_dim,
@@ -141,7 +152,7 @@ def build_decoder(args, **kwargs):
             num_decoder_layers=args.dec_layers,
             return_intermediate_dec=True,
         )
-    else:
+    else: # if Decoder is Basic
         from .prog_win_transformer import WinDecoderTransformer
         return WinDecoderTransformer(
             d_model=args.hidden_dim,
