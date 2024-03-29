@@ -54,13 +54,13 @@ class WinEncoderTransformer(nn.Module):
     def forward(self, src, pos_embed, mask):
         bs, c, h, w = src.shape  # [8, 256, 32, 32]
         
-        memeory_list = []
-        memeory = src
+        memory_list = []
+        memory = src
         for encoder in self.encoder:
-            memeory = encoder(memeory, pos_embed, mask)
+            memory = encoder(memory, pos_embed, mask)
             if self.return_intermediate:
-                memeory_list.append(memeory)
-        memory_ = memeory_list if self.return_intermediate else memeory
+                memory_list.append(memory)
+        memory_ = memory_list if self.return_intermediate else memory
 
         return memory_
 
@@ -110,7 +110,7 @@ class WinDecoderTransformer(nn.Module):
         hs_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win, 
                                                                         query_pos=query_embed_win, **kwargs)
         # hs_win.shape: [2, 128, 64, 256]
-        hs_tmp = [window_partition_reverse(hs_w, dec_win_h, dec_win_w, qH, qW) for hs_w in hs_win]
+        hs_tmp = [window_reverse_output(hs_w, dec_win_h, dec_win_w, qH, qW) for hs_w in hs_win]
         hs = torch.vstack([hs_t.unsqueeze(0) for hs_t in hs_tmp])
         # hs.shape: [2, 1024, 8, 256]
         return hs
@@ -135,7 +135,7 @@ class WinDecoderTransformer(nn.Module):
         # window-rize memory input
         div_ratio = 1 if kwargs['pq_stride'] == 8 else 2
         # [128, 64, 256], [128, 64, 256], [64, 128]
-        memory_win, pos_embed_win, mask_win = enc_win_partition(src, pos_embed, mask, 
+        memory_win, pos_embed_win, mask_win = window_reverse(src, pos_embed, mask, 
                                                     int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
         
         # dynamic decoder forward
@@ -510,15 +510,21 @@ class SwinTransformerBlock(nn.Module):
                 shifted_pos = torch.roll(pos_embed, shifts=(-self.shift_size[0], -self.shift_size[1]), dims=(2, 3))
                 shifted_mask = torch.roll(mask, shifts=(-self.shift_size[0], -self.shift_size[1]), dims=(1, 2))
                 # partition windows
-                x_windows, pos_embed_win, mask_win = enc_win_partition(shifted_x, shifted_pos, shifted_mask, enc_win_h, enc_win_w)
+                x_windows = window_partition(shifted_x, enc_win_h, enc_win_w)
+                pos_embed_win = window_partition(shifted_pos, enc_win_h, enc_win_w)
+                mask_win = window_partition(shifted_mask, enc_win_h, enc_win_w)
             else:
-                x_windows, pos_embed_win, mask_win = enc_win_partition(shifted_x, shifted_pos, shifted_mask, enc_win_h, enc_win_w)
+                x_windows = window_partition(shifted_x, enc_win_h, enc_win_w)
+                pos_embed_win = window_partition(shifted_pos, enc_win_h, enc_win_w)
+                mask_win = window_partition(shifted_mask, enc_win_h, enc_win_w)
         else:
             shifted_x = x
             shifted_mask = mask
             shifted_pos = pos_embed
             # partition windows
-            x_windows, pos_embed_win, mask_win = enc_win_partition(shifted_x, shifted_pos, shifted_mask, enc_win_h, enc_win_w)
+            x_windows = window_partition(shifted_x, enc_win_h, enc_win_w)
+            pos_embed_win = window_partition(shifted_pos, enc_win_h, enc_win_w)
+            mask_win = window_partition(shifted_mask, enc_win_h, enc_win_w)
         # x_windows: [512, 16, 256]
         # W-MSA/SW-MSA
         # attn_windows.shape: [512, 16, 256]
@@ -530,12 +536,12 @@ class SwinTransformerBlock(nn.Module):
         # reverse cyclic shift
         if self.shift_size != 0:
             if not self.fused_window_process:
-                shifted_x = enc_win_partition_reverse(attn_windows, enc_win_h, enc_win_w, H, W)  
+                shifted_x = window_reverse(attn_windows, enc_win_h, enc_win_w, H, W)  
                 x = torch.roll(shifted_x, shifts=(self.shift_size[0], self.shift_size[1]), dims=(2, 3))
             else:
-                x = enc_win_partition_reverse(attn_windows, enc_win_h, enc_win_w, H, W)
+                x = window_reverse(attn_windows, enc_win_h, enc_win_w, H, W)
         else:
-            shifted_x = enc_win_partition_reverse(attn_windows, enc_win_h, enc_win_w, H, W) 
+            shifted_x = window_reverse(attn_windows, enc_win_h, enc_win_w, H, W) 
             x = shifted_x
         # breakpoint()
         x = x.permute(0,2,3,1)

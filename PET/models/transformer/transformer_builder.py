@@ -9,7 +9,7 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=args.enc_layers,
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             **kwargs,
         )
     elif args.transformer_method == 'swinpool':
@@ -20,11 +20,11 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=args.enc_layers,
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             **kwargs,
         )
     elif args.transformer_method == 'two_encoder':
-        from .prog_2_encoder_win_transformer import WinEncoderTransformer
+        from .prog_win_transformer_two_encoder import WinEncoderTransformer
         kwargs['enc_win_list'] = [(32, 16), (16, 8)]
         kwargs['transformer_method'] = args.transformer_method
         return WinEncoderTransformer(
@@ -33,11 +33,11 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=len(kwargs['enc_win_list']),
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             **kwargs,
         )
     elif args.transformer_method == 'two_encoder_pooling':
-        from .prog_2_encoder_win_transformer_pooling_NEW import WinEncoderTransformer
+        from .prog_win_transformer_two_encoder_pooling import WinEncoderTransformer
         kwargs['enc_win_list'] = [(32, 16), (16, 8)]
         kwargs['transformer_method'] = args.transformer_method
         return WinEncoderTransformer(
@@ -46,11 +46,11 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=len(kwargs['enc_win_list']),
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             **kwargs,
         )
     elif args.transformer_method == 'three_encoder':
-        from .prog_2_encoder_win_transformer import WinEncoderTransformer
+        from .prog_win_transformer_two_encoder import WinEncoderTransformer
         kwargs['enc_win_list'] = [(32, 16), (32, 16), (16, 8)]
         kwargs['transformer_method'] = args.transformer_method
         return WinEncoderTransformer(
@@ -59,11 +59,11 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=len(kwargs['enc_win_list']),
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             **kwargs,
         )
     elif args.transformer_method == 'swin_patch_merging_FPN64_2Encoder':
-        from .prog_2_encoder_swin_transformer import WinEncoderTransformer, PatchMerging
+        from .prog_swin_transformer_two_encoder import WinEncoderTransformer, PatchMerging
         
         kwargs['enc_win_list'] =[(32, 16), (32, 16)]
 
@@ -73,7 +73,7 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=len(kwargs['enc_win_list']),
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             downsample=PatchMerging,
             **kwargs,
         )
@@ -85,11 +85,11 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=args.enc_layers,
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             **kwargs,
         )
-    elif args.transformer_method == "only_encoder":  # only encoder
-        from .prog_win_transformer_only_encoder import WinEncoderTransformer
+    elif args.transformer_method == "only_encoder_v1":  # Only Encoder V1
+        from .prog_win_transformer_only_encoder_v1 import WinEncoderTransformer
         
         return WinEncoderTransformer(
             d_model=args.hidden_dim,
@@ -97,7 +97,7 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=args.dec_layers,
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             return_intermediate_dec=True,
             **kwargs
         )
@@ -108,7 +108,7 @@ def build_encoder(args, **kwargs):
         dropout=args.dropout,
         dim_feedforward=args.dim_feedforward,
         num_encoder_layers=args.enc_layers,
-        # activation="gelu",  #### CHANGE
+        # activation="gelu",
         **kwargs,
     )
     elif args.transformer_method == "only_encoder_HiLo":
@@ -122,7 +122,7 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=args.enc_layers,
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             **kwargs
         )
     elif args.transformer_method == "only_encoder_H_P":
@@ -136,7 +136,7 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=args.enc_layers,
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             **kwargs
         )
     elif args.transformer_method == "one_encoder":
@@ -150,7 +150,37 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=args.enc_layers,
-            activation="gelu",  #### CHANGE
+            activation="gelu",
+            **kwargs
+        )
+    elif args.transformer_method == "only_encoder_v2":  # Only Encoder V2
+        from .prog_win_transformer_only_encoder_v2 import WinEncoderTransformer
+        
+        kwargs["encoder_window_list"] = [(32, 16), (8, 4)]
+        num_encoder_layers = len(kwargs["encoder_window_list"])
+        
+        return WinEncoderTransformer(
+            d_model=args.hidden_dim,
+            dropout=args.dropout,
+            nhead=args.nheads,
+            dim_feedforward=args.dim_feedforward,
+            num_encoder_layers=num_encoder_layers,
+            activation="gelu",
+            **kwargs
+        )
+    elif args.transformer_method == "only_encoder_v2_manual_attention":
+        from .prog_win_transformer_only_encoder_v2_manual_attention import WinEncoderTransformer
+        
+        kwargs["encoder_window_list"] = [(32, 16), (8, 4)]
+        num_encoder_layers = len(kwargs["encoder_window_list"])
+        
+        return WinEncoderTransformer(
+            d_model=args.hidden_dim,
+            dropout=args.dropout,
+            nhead=args.nheads,
+            dim_feedforward=args.dim_feedforward,
+            num_encoder_layers=num_encoder_layers,
+            activation="gelu",
             **kwargs
         )
     else: # if Encoder is Basic
@@ -161,7 +191,7 @@ def build_encoder(args, **kwargs):
             nhead=args.nheads,
             dim_feedforward=args.dim_feedforward,
             num_encoder_layers=args.enc_layers,
-            activation="gelu",  #### CHANGE
+            activation="gelu",
             **kwargs,
         )
 
@@ -188,7 +218,7 @@ def build_decoder(args, **kwargs):
             return_intermediate_dec=True,
         )
     elif args.transformer_method == 'two_encoder':
-        from .prog_2_encoder_win_transformer import WinDecoderTransformer
+        from .prog_win_transformer_two_encoder import WinDecoderTransformer
         return WinDecoderTransformer(
             d_model=args.hidden_dim,
             dropout=args.dropout,
@@ -198,7 +228,7 @@ def build_decoder(args, **kwargs):
             return_intermediate_dec=True,
         )
     elif args.transformer_method == 'two_encoder_pooling':
-        from .prog_2_encoder_win_transformer_pooling_NEW import WinDecoderTransformer
+        from .prog_win_transformer_two_encoder_pooling import WinDecoderTransformer
         return WinDecoderTransformer(
             d_model=args.hidden_dim,
             dropout=args.dropout,
@@ -208,7 +238,7 @@ def build_decoder(args, **kwargs):
             return_intermediate_dec=True,
         )
     elif args.transformer_method == 'swin_patch_merging_FPN64_2Encoder':
-        from .prog_2_encoder_swin_transformer import WinDecoderTransformer
+        from .prog_swin_transformer_two_encoder import WinDecoderTransformer
         return WinDecoderTransformer(
             d_model=args.hidden_dim,
             dropout=args.dropout,

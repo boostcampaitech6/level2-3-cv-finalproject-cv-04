@@ -1,9 +1,12 @@
 """
 PET model and criterion classes
 """
+import time
+
 import torch
 import torch.nn.functional as F
 from torch import nn
+from einops import rearrange
 
 from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
                        get_world_size, is_dist_avail_and_initialized)
@@ -18,158 +21,110 @@ class BasePETCount(nn.Module):
     """ 
     Base PET model
     """
-    def __init__(self, backbone, num_classes, quadtree_layer='sparse', args=None, **kwargs):
+    def __init__(self, num_classes, quadtree_layer='sparse', args=None, **kwargs):
         super().__init__()
-        self.transformer = kwargs['transformer']
         hidden_dim = args.hidden_dim
 
-        self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
-        self.coord_embed = MLP(hidden_dim, hidden_dim, 2, 3)
+        # prediction head
+        self.class_embed = nn.Linear(hidden_dim, num_classes + 1)  # classifier
+        self.coord_embed = MLP(hidden_dim, hidden_dim, 2, 3)  # regressor
 
         self.pq_stride = args.sparse_stride if quadtree_layer == 'sparse' else args.dense_stride
         self.feat_name = '8x' if quadtree_layer == 'sparse' else '4x'
-    
-    def points_queries_embed(self, samples, stride=8, src=None, **kwargs):
-        """
-        Generate point query embedding during training
-        """
-        # dense position encoding at every pixel location
-        dense_input_embed = kwargs['dense_input_embed']
-        bs, c = dense_input_embed.shape[:2]
-
-        # get image shape
-        input = samples.tensors
-        image_shape = torch.tensor(input.shape[2:])
-        shape = (image_shape + stride//2 -1) // stride
-
-        # generate point queries
-        shift_x = ((torch.arange(0, shape[1]) + 0.5) * stride).long()
-        shift_y = ((torch.arange(0, shape[0]) + 0.5) * stride).long()
-        shift_y, shift_x = torch.meshgrid(shift_y, shift_x)
-        points_queries = torch.vstack([shift_y.flatten(), shift_x.flatten()]).permute(1,0) # 2xN --> Nx2  # 1024, 2
-        h, w = shift_x.shape
-
-        # get point queries embedding
-        query_embed = dense_input_embed[:, :, points_queries[:, 0], points_queries[:, 1]]
-        bs, c = query_embed.shape[:2]
-        query_embed = query_embed.view(bs, c, h, w)
-
-        # get point queries features, equivalent to nearest interpolation
-        shift_y_down, shift_x_down = points_queries[:, 0] // stride, points_queries[:, 1] // stride
-        query_feats = src[:, :, shift_y_down,shift_x_down]
-        query_feats = query_feats.view(bs, c, h, w)
-
-        return query_embed, points_queries, query_feats
-    
-    def points_queries_embed_inference(self, samples, stride=8, src=None, **kwargs):
-        """
-        Generate point query embedding during inference
-        """
-        # dense position encoding at every pixel location
-        dense_input_embed = kwargs['dense_input_embed']
-        bs, c = dense_input_embed.shape[:2]
-
-        # get image shape
-        input = samples.tensors
-        image_shape = torch.tensor(input.shape[2:])
-        shape = (image_shape + stride//2 -1) // stride
-
-        # generate points queries
-        shift_x = ((torch.arange(0, shape[1]) + 0.5) * stride).long()
-        shift_y = ((torch.arange(0, shape[0]) + 0.5) * stride).long()
-        shift_y, shift_x = torch.meshgrid(shift_y, shift_x)
-        points_queries = torch.vstack([shift_y.flatten(), shift_x.flatten()]).permute(1,0) # 2xN --> Nx2
-        h, w = shift_x.shape
-
-        # get points queries embedding 
-        query_embed = dense_input_embed[:, :, points_queries[:, 0], points_queries[:, 1]]
-        bs, c = query_embed.shape[:2]
-
-        # get points queries features, equivalent to nearest interpolation
-        shift_y_down, shift_x_down = points_queries[:, 0] // stride, points_queries[:, 1] // stride
-        query_feats = src[:, :, shift_y_down, shift_x_down]
-        
-        # window-rize
-        query_embed = query_embed.reshape(bs, c, h, w)
-        points_queries = points_queries.reshape(h, w, 2).permute(2, 0, 1).unsqueeze(0)
-        query_feats = query_feats.reshape(bs, c, h, w)
-
-        dec_win_w, dec_win_h = kwargs['dec_win_size']
-        query_embed_win = window_partition(query_embed, window_size_h=dec_win_h, window_size_w=dec_win_w)
-        points_queries_win = window_partition(points_queries, window_size_h=dec_win_h, window_size_w=dec_win_w)
-        query_feats_win = window_partition(query_feats, window_size_h=dec_win_h, window_size_w=dec_win_w)
-        
-        # dynamic point query generation
-        div = kwargs['div']
-        div_win = window_partition(div.unsqueeze(1), window_size_h=dec_win_h, window_size_w=dec_win_w)
-        valid_div = (div_win > 0.5).sum(dim=0)[:,0]
-        v_idx = valid_div > 0
-        query_embed_win = query_embed_win[:, v_idx]
-        query_feats_win = query_feats_win[:, v_idx]
-        
-        v_idx = v_idx.cpu()
-        points_queries_win = points_queries_win[:, v_idx].reshape(-1, 2)
-    
-        return query_embed_win, points_queries_win, query_feats_win, v_idx
+        self.feats_norm = nn.LayerNorm(hidden_dim)
         
     
-    def get_point_query(self, samples, features, **kwargs):
+    def get_point_query(self, samples, features, encode_feats, **kwargs):
         """
         Generate point query
         """
         src, _ = features[self.feat_name].decompose()
 
-        # generate points queries and position embedding
-        if 'train' in kwargs:
-            query_embed, points_queries, query_feats = self.points_queries_embed(samples, self.pq_stride, src, **kwargs)
-            query_embed = query_embed.flatten(2).permute(2,0,1)
-            v_idx = None
-        else:
-            query_embed, points_queries, query_feats, v_idx = self.points_queries_embed_inference(samples, self.pq_stride, src, **kwargs)
+        # get image shape
+        input = samples.tensors
+        image_shape = torch.tensor(input.shape[2:])
+        shape = (image_shape + self.pq_stride//2 - 1) // self.pq_stride
+        
+        # generate points queries
+        shift_x = ((torch.arange(0, shape[1]) + 0.5) * self.pq_stride).long()
+        shift_y = ((torch.arange(0, shape[0]) + 0.5) * self.pq_stride).long()
+        shift_y, shift_x = torch.meshgrid(shift_y, shift_x)
+        points_queries = torch.vstack([shift_y.flatten(), shift_x.flatten()]).permute(1, 0) # 2xN --> Nx2
+        h, w = shift_x.shape
 
-        out = (query_embed, points_queries, query_feats, v_idx)
+        # get points queries features, equivalent to nearest interpolation
+        shift_y_down, shift_x_down = points_queries[:, 0] // self.pq_stride, points_queries[:, 1] // self.pq_stride  # 왼쪽 위 포인트
+        src_feats = src[:, :, shift_y_down, shift_x_down]  # [B C (H W)]
+        bs, c = src_feats.shape[:2]
+        
+        # residual connection
+        encode_feats = F.interpolate(encode_feats, (h, w)).reshape(bs, c, -1)
+        src_feats = src_feats + encode_feats
+        
+        win_size_w, win_size_h = kwargs["window_size"]
+        if "test" in kwargs:
+            # dynamic point query generation
+            div = kwargs['div']  # [B, H, W]
+            div_win = window_partition(div.unsqueeze(1), win_size_h, win_size_w)  # [B, 1, H, W] -> [L, B_, 1]
+            valid_div = (div_win > 0.5).sum(dim=0)[:,0]
+            v_idx = valid_div > 0
+            
+            # window-rize
+            src_feats = rearrange(src_feats, "B C (H W) -> B C H W", H=h, W=w)
+            points_queries = rearrange(points_queries.unsqueeze(0), "B (H W) N -> B N H W", H=h, W=w)
+            
+            src_feats = window_partition(src_feats, win_size_h, win_size_w)  # [L B' C]
+            points_queries = window_partition(points_queries, win_size_h, win_size_w)  # [L B' 2]
+            src_feats = src_feats[:, v_idx].reshape(-1, c)  # [L v_idx C] -> [(L v_idx) C]
+            
+            v_idx = v_idx.cpu()
+            points_queries = points_queries[:, v_idx].reshape(-1, 2)  # [L v_idx 2] -> [(L v_idx) 2]
+        else:
+            src_feats = src_feats.transpose(1, 2)  # [B (H W) C]
+        
+        # points_queries = train: [(H W), 2] / test: [(L v_idx) 2]
+        # src_feats = train: [B (H W) C] / test: [(L v_idx) C]
+        out = (points_queries, src_feats)
         return out
     
-    def predict(self, samples, points_queries, hs, **kwargs):
+    
+    def predict(self, samples, points_queries, src_feats, **kwargs):
         """
         Crowd prediction
         """
-        outputs_class = self.class_embed(hs)
+        outputs_class = self.class_embed(src_feats)  # [8, 1024, 2] or [8, 4096, 2]
         # normalize to 0~1
-        outputs_offsets = (self.coord_embed(hs).sigmoid() - 0.5) * 2.0
+        outputs_offsets = (self.coord_embed(src_feats).sigmoid() - 0.5) * 2.0  # [8, 1024, 2] or [8, 4096, 2]
 
         # normalize point-query coordinates
-        img_shape = samples.tensors.shape[-2:]
-        img_h, img_w = img_shape
+        img_shape = samples.tensors.shape[-2:]  # train: [256, 256] / test: [H, W]
+        img_h, img_w = img_shape  # train: 256, 256 / test: H, W
+        
         points_queries = points_queries.float().cuda()
-        points_queries[:, 0] /= img_h
-        points_queries[:, 1] /= img_w
+        points_queries[:, 0] /= img_h  # shift_y
+        points_queries[:, 1] /= img_w  # shift_x
 
         # rescale offset range during testing
         if 'test' in kwargs:
             outputs_offsets[...,0] /= (img_h / 256)
             outputs_offsets[...,1] /= (img_w / 256)
 
-        outputs_points = outputs_offsets[-1] + points_queries
-        out = {'pred_logits': outputs_class[-1], 'pred_points': outputs_points, 'img_shape': img_shape, 'pred_offsets': outputs_offsets[-1]}
+        outputs_points = outputs_offsets + points_queries
+        out = {'pred_logits': outputs_class, 'pred_points': outputs_points, 'img_shape': img_shape, 'pred_offsets': outputs_offsets}
     
         out['points_queries'] = points_queries
         out['pq_stride'] = self.pq_stride
         return out
 
-    def forward(self, samples, features, context_info, **kwargs):
-        encode_src, src_pos_embed, mask = context_info
-
-        # get points queries for transformer
-        pqs = self.get_point_query(samples, features, **kwargs)
+    def forward(self, samples, features, encode_feats, **kwargs):
+        # samples: 원본 이미지(H x W), features: FPN(64x64, 32x32)
         
-        # point querying
-        kwargs['pq_stride'] = self.pq_stride
-        hs = self.transformer(encode_src, src_pos_embed, mask, pqs, img_shape=samples.tensors.shape[-2:], **kwargs) # encoder의 결과물만 관여함
-
+        # get points queries for prediction
+        points_queries, src_feats = self.get_point_query(samples, features, encode_feats, **kwargs)
+        src_feats = self.feats_norm(src_feats)
+        
         # prediction
-        points_queries = pqs[1]
-        outputs = self.predict(samples, points_queries, hs, **kwargs)
+        outputs = self.predict(samples, points_queries, src_feats, **kwargs)
         return outputs
     
 
@@ -191,28 +146,27 @@ class PET(nn.Module):
             nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1),
             ]
         )
-        
+
         # context encoder
         self.encode_feats = '8x'
-        enc_win_list = [(32, 16), (32, 16), (16, 8), (16, 8)]  # encoder window size
-        
-        args.enc_layers = len(enc_win_list)
-        self.context_encoder = build_encoder(args, enc_win_list=enc_win_list)
+        self.transformer = build_encoder(args)
 
         # quadtree splitter
         context_patch = (128, 64)
-        context_w, context_h = context_patch[0]//int(self.encode_feats[:-1]), context_patch[1]//int(self.encode_feats[:-1])
-        self.quadtree_splitter = nn.Sequential(
-            nn.AvgPool2d((context_h, context_w), stride=(context_h, context_w)),
-            nn.Conv2d(hidden_dim, 1, 1),
+        context_w, context_h = \
+            context_patch[0]//int(self.encode_feats[:-1]),\
+            context_patch[1]//int(self.encode_feats[:-1])  # context_w = 128//8 = 16, context_h = 64//8 = 8
+        self.quadtree_splitter = nn.Sequential(  # 32x32
+            nn.AvgPool2d(kernel_size=(context_h, context_w), stride=(context_h, context_w)),  # kernel_size = (8, 16), stride = (8, 16)
+            # 2x4 -> [B, C, 4, 2]
+            nn.Conv2d(in_channels=hidden_dim, out_channels=1, kernel_size=1),  # [8, 1, 4, 2]
             nn.Sigmoid(),
         )
 
         # point-query quadtree
         args.sparse_stride, args.dense_stride = 8, 4  # point-query stride
-        transformer = build_decoder(args)
-        self.quadtree_sparse = BasePETCount(backbone, num_classes, quadtree_layer='sparse', args=args, transformer=transformer)
-        self.quadtree_dense = BasePETCount(backbone, num_classes, quadtree_layer='dense', args=args, transformer=transformer)
+        self.quadtree_sparse = BasePETCount(num_classes, quadtree_layer='sparse', args=args)
+        self.quadtree_dense = BasePETCount(num_classes, quadtree_layer='dense', args=args)
 
     def compute_loss(self, outputs, criterion, targets, epoch, samples):
         """
@@ -290,11 +244,12 @@ class PET(nn.Module):
         # backbone
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
+        
         features, pos = self.backbone(samples)
 
         # positional embedding
         dense_input_embed = self.pos_embed(samples)
-        kwargs['dense_input_embed'] = dense_input_embed
+        kwargs['dense_input_embed'] = dense_input_embed  # [B, 256, 256, 256]
 
         # feature projection
         features['4x'] = NestedTensor(self.input_proj[0](features['4x'].tensors), features['4x'].mask)
@@ -304,41 +259,40 @@ class PET(nn.Module):
         if 'train' in kwargs:
             out = self.train_forward(samples, features, pos, **kwargs)
         else:
-            out = self.test_forward(samples, features, pos, **kwargs)   
+            out = self.test_forward(samples, features, pos, **kwargs)
         return out
 
     def pet_forward(self, samples, features, pos, **kwargs):
         # context encoding
-        src, mask = features[self.encode_feats].decompose()
-        src_pos_embed = pos[self.encode_feats]
-        assert mask is not None
-        encode_src = self.context_encoder(src, src_pos_embed, mask)
-        context_info = (encode_src, src_pos_embed, mask)
+        src, _ = features[self.encode_feats].decompose()  # NestedTensor
+        src_pos = pos[self.encode_feats]
+        
+        encode_feats = self.transformer(src, src_pos)  # [B C H W]
         
         # apply quadtree splitter
-        bs, _, src_h, src_w = src.shape
-        sp_h, sp_w = src_h, src_w
-        ds_h, ds_w = int(src_h * 2), int(src_w * 2)
-        split_map = self.quadtree_splitter(encode_src)
-        split_map_dense = F.interpolate(split_map, (ds_h, ds_w)).reshape(bs, -1)
-        split_map_sparse = 1 - F.interpolate(split_map, (sp_h, sp_w)).reshape(bs, -1)
+        bs, _, src_h, src_w = src.shape  # bs = 8, src_h = 32, src_w = 32
+        sp_h, sp_w = src_h, src_w  # sp_h = 32, sp_w = 32
+        ds_h, ds_w = int(src_h * 2), int(src_w * 2)  # ds_h = 64, ds_w = 64
+        split_map = self.quadtree_splitter(encode_feats)  # [8, 1, 4, 2]
+        split_map_dense = F.interpolate(split_map, (ds_h, ds_w)).reshape(bs, -1)  # interpolate(split_map) = [8, 1, 64, 64] / interpolate(split_map).reshape = [8, 4096]
+        split_map_sparse = 1 - F.interpolate(split_map, (sp_h, sp_w)).reshape(bs, -1)  # interpolate(split_map) = [8, 1, 32, 32] / interpolate(split_map).reshape = [8, 1024]
         
         # quadtree layer0 forward (sparse)
         if 'train' in kwargs or (split_map_sparse > 0.5).sum() > 0:
             kwargs['div'] = split_map_sparse.reshape(bs, sp_h, sp_w)
-            kwargs['dec_win_size'] = [16, 8]
-            outputs_sparse = self.quadtree_sparse(samples, features, context_info, **kwargs)
+            kwargs["window_size"] = [16, 8]
+            outputs_sparse = self.quadtree_sparse(samples, features, encode_feats, **kwargs)  # samples: 원본 이미지(HxW), features: FPN(64x64, 32x32), context_info: 인코더 출력(32x32) 
         else:
             outputs_sparse = None
         
         # quadtree layer1 forward (dense)
         if 'train' in kwargs or (split_map_dense > 0.5).sum() > 0:
             kwargs['div'] = split_map_dense.reshape(bs, ds_h, ds_w)
-            kwargs['dec_win_size'] = [8, 4]
-            outputs_dense = self.quadtree_dense(samples, features, context_info, **kwargs)
+            kwargs["window_size"] = [8, 4]
+            outputs_dense = self.quadtree_dense(samples, features, encode_feats, **kwargs)  # samples: 원본 이미지(HxW), features: FPN(64x64, 32x32), context_info: 인코더 출력(32x32) 
         else:
             outputs_dense = None
-        
+            
         # format outputs
         outputs = dict()
         outputs['sparse'] = outputs_sparse
@@ -390,6 +344,7 @@ class PET(nn.Module):
                     div_out[name] = torch.cat([out_sparse[name][index_sparse].unsqueeze(0), out_dense[name][index_dense].unsqueeze(0)], dim=1)
             else:
                 div_out[name] = out_sparse[name] if out_sparse is not None else out_dense[name]
+        
         div_out['split_map_raw'] = outputs['split_map_raw']
         return div_out
 
@@ -564,11 +519,16 @@ class MLP(nn.Module):
     """
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers, is_reduce=False, use_relu=True):
         super().__init__()
+        # input_dim = hidden_dim = 256
+        # output_dim = 2
+        # num_layers = 3
         self.num_layers = num_layers
         if is_reduce:
-            h = [hidden_dim//2**i for i in range(num_layers - 1)]
+            h = [hidden_dim//2**i for i in range(num_layers - 1)]  # [256, 128]
         else:
-            h = [hidden_dim] * (num_layers - 1)
+            h = [hidden_dim] * (num_layers - 1)  # [256, 256]
+        # [input_dim] + h = [256, 256, 256]
+        # h + [output_dim] = [256, 256, 2]
         self.layers = nn.ModuleList(nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim]))
         self.use_relu = use_relu
 
@@ -584,7 +544,7 @@ class MLP(nn.Module):
 def build_pet(args):
     device = torch.device(args.device)
 
-     # build model
+    # build model
     num_classes = 1
     if args.backbone.startswith("vgg"):
         backbone = build_backbone_vgg(args)
@@ -592,7 +552,6 @@ def build_pet(args):
         backbone = build_backbone_efficient(args)
     elif args.backbone.startswith("resnet"):
         backbone = build_backbone_resnet(args)
-    
     model = PET(
         backbone,
         num_classes=num_classes,
