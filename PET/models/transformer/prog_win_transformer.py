@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch import nn, Tensor
 from .utils import *
 
+
 class WinEncoderTransformer(nn.Module):
     """
     Transformer Encoder, featured with progressive rectangle window attention
@@ -35,23 +36,25 @@ class WinEncoderTransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
     
     def forward(self, src, pos_embed, mask):
-        bs, c, h, w = src.shape  # [8, 256, 32, 32]
+        bs, c, h, w = src.shape
         
-        memeory_list = []
-        memeory = src
-        for idx, enc_win_size in enumerate(self.enc_win_list):  # [(32, 16), (32, 16), (16, 8), (16, 8)]
+        memory_list = []
+        memory = src
+        for idx, enc_win_size in enumerate(self.enc_win_list):
             # encoder window partition
             enc_win_w, enc_win_h = enc_win_size
-            memeory_win, pos_embed_win, mask_win  = enc_win_partition(memeory, pos_embed, mask, enc_win_h, enc_win_w)  # [512, 16, 256]
+            memory_win = window_partition(src, enc_win_h, enc_win_w)
+            pos_embed_win = window_partition(pos_embed, enc_win_h, enc_win_w)
+            mask_win = window_partition(mask.unsqueeze(1), enc_win_h, enc_win_w)
 
             # encoder forward
-            output = self.encoder.single_forward(memeory_win, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx)
+            output = self.encoder.single_forward(memory_win, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx)
 
             # reverse encoder window
-            memeory = enc_win_partition_reverse(output, enc_win_h, enc_win_w, h, w)  # memory.shape = [8, 256, 32, 32]
+            memory = window_reverse(output, enc_win_h, enc_win_w, h, w)
             if self.return_intermediate:
-                memeory_list.append(memeory)
-        memory_ = memeory_list if self.return_intermediate else memeory
+                memory_list.append(memory)
+        memory_ = memory_list if self.return_intermediate else memory
         return memory_
 
 
@@ -99,7 +102,7 @@ class WinDecoderTransformer(nn.Module):
         # decoder attention
         hs_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win, 
                                                                         query_pos=query_embed_win, **kwargs)
-        hs_tmp = [window_partition_reverse(hs_w, dec_win_h, dec_win_w, qH, qW) for hs_w in hs_win]
+        hs_tmp = [window_reverse_output(hs_w, dec_win_h, dec_win_w, qH, qW) for hs_w in hs_win]
         hs = torch.vstack([hs_t.unsqueeze(0) for hs_t in hs_tmp])
         return hs
     
@@ -122,9 +125,10 @@ class WinDecoderTransformer(nn.Module):
         
         # window-rize memory input
         div_ratio = 1 if kwargs['pq_stride'] == 8 else 2
-        memory_win, pos_embed_win, mask_win = enc_win_partition(src, pos_embed, mask, 
-                                                    int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
-        
+        memory_win = window_partition(src, int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
+        pos_embed_win = window_partition(pos_embed, int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
+        mask_win = window_partition(mask.unsqueeze(1), int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
+
         # dynamic decoder forward
         if 'test' in kwargs:
             memory_win = memory_win[:,v_idx]
@@ -146,7 +150,7 @@ class TransformerEncoder(nn.Module):
     """
     def __init__(self, encoder_layer, num_layers, **kwargs):
         super().__init__()
-        self.layers = _get_clones(encoder_layer, num_layers)  # 인코더 레이어(블록)가 4개 들어감
+        self.layers = _get_clones(encoder_layer, num_layers)
         self.num_layers = num_layers
 
         if 'return_intermediate' in kwargs:
@@ -160,8 +164,9 @@ class TransformerEncoder(nn.Module):
                 pos: Optional[Tensor] = None,
                 layer_idx=0):
         
-        output = src  # 윈도우화 한 이미지 특징
-        layer = self.layers[layer_idx]  # idx번째 인코더 레이어
+        output = src
+        layer = self.layers[layer_idx]
+        
         output = layer(output, src_mask=mask,
                         src_key_padding_mask=src_key_padding_mask, pos=pos)        
         return output
@@ -236,29 +241,19 @@ class EncoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=512, dropout=0.0,
                  activation="relu"):
         super().__init__()
-        # attention layers
-        # self.self_attention = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        # self.scaled_dot_attn = nn.MultiheadAttention
-
-        # feed forward layer
-        # self.linear1 = nn.Linear(d_model, dim_feedforward)  # 256, 512
-        # self.linear2 = nn.Linear(dim_feedforward, d_model)  # 512, 256
-        # self.layer_normalization1 = nn.LayerNorm(d_model)
-        # self.layer_normalization2 = nn.LayerNorm(d_model)
-        # self.activation = _get_activation_fn(activation)
-        
+        # attention layer
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.scaled_dot_attn = nn.MultiheadAttention
         
-        self.linear1 = nn.Linear(d_model, dim_feedforward)  # 256, 512
-        self.linear2 = nn.Linear(dim_feedforward, d_model)  # 512, 256
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
         self.activation = _get_activation_fn(activation)
 
     def with_pos_embed(self, tensor, pos: Optional[Tensor]):
         return tensor if pos is None else tensor + pos
-
+    
     def forward(self, src,
                      src_mask: Optional[Tensor] = None,
                      src_key_padding_mask: Optional[Tensor] = None,
@@ -267,23 +262,20 @@ class EncoderLayer(nn.Module):
         q = k = self.with_pos_embed(src, pos)
         
         # encoder self-attention
-        # src2 = self.self_attention(q, k, value=src, attn_mask=src_mask,
-        #                            key_padding_mask=src_key_padding_mask)[0]
         src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
                                    key_padding_mask=src_key_padding_mask)[0]
         
         # residual connection & layer normalization
         src = src + src2
         src = self.norm1(src)
-
-        # feed forward layer
+        
+        # feed forward network
         src2 = self.linear2(self.activation(self.linear1(src)))
         
         # residual connection & layer normalization
         src = src + src2
         src = self.norm2(src)
-        
-        return src  # [vactorize window, batch size x windows per image, chennels]
+        return src
 
 
 class DecoderLayer(nn.Module):
@@ -292,17 +284,6 @@ class DecoderLayer(nn.Module):
         super().__init__()
         
         # attention layer
-        # self.self_attention = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        # self.cross_attention = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-
-        # feed forward layer
-        # self.linear1 = nn.Linear(d_model, dim_feedforward)
-        # self.linear2 = nn.Linear(dim_feedforward, d_model)
-        # self.layer_normalization1 = nn.LayerNorm(d_model)
-        # self.layer_normalization2 = nn.LayerNorm(d_model)
-        # self.layer_normalization3 = nn.LayerNorm(d_model)
-        # self.activation = _get_activation_fn(activation)
-        
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         
@@ -329,21 +310,12 @@ class DecoderLayer(nn.Module):
         q = k = self.with_pos_embed(tgt, query_pos)
         
         # decoder self attention
-        # target2 = self.self_attention(q, k, value=tgt, attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask)[0]
-        # target = tgt + target2
-        # target = self.layer_normalization1(target)
         target2 = self.self_attn(q, k, value=tgt, attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask)[0]
         target = tgt + target2
         target = self.norm1(target)
         
 
         # decoder cross attention
-        # target2 = self.cross_attention(query=self.with_pos_embed(target, query_pos),
-        #                             key=self.with_pos_embed(memory, pos),
-        #                             value=memory, attn_mask=memory_mask,
-        #                             key_padding_mask=memory_key_padding_mask)[0]
-        # target = target + target2
-        # target = self.layer_normalization2(target)
         target2 = self.multihead_attn(query=self.with_pos_embed(target, query_pos),
                                     key=self.with_pos_embed(memory, pos),
                                     value=memory, attn_mask=memory_mask,
@@ -351,7 +323,7 @@ class DecoderLayer(nn.Module):
         target = target + target2
         target = self.norm2(target)
 
-        # feed forward layer
+        # feed forward network
         target2 = self.linear2(self.activation(self.linear1(target)))
         
         # residual connection & layer normalization
@@ -363,29 +335,6 @@ class DecoderLayer(nn.Module):
 
 def _get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
-
-
-def build_encoder(args, **kwargs):
-    return WinEncoderTransformer(
-        d_model=args.hidden_dim,
-        dropout=args.dropout,
-        nhead=args.nheads,
-        dim_feedforward=args.dim_feedforward,
-        num_encoder_layers=args.enc_layers,
-        activation="gelu",  #### CHANGE
-        **kwargs,
-    )
-
-
-def build_decoder(args, **kwargs):
-    return WinDecoderTransformer(
-        d_model=args.hidden_dim,
-        dropout=args.dropout,
-        nhead=args.nheads,
-        dim_feedforward=args.dim_feedforward,
-        num_decoder_layers=args.dec_layers,
-        return_intermediate_dec=True,
-    )
 
 
 def _get_activation_fn(activation):

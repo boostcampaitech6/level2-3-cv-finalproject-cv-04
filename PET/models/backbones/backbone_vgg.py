@@ -51,14 +51,63 @@ class BackboneBase_VGG(nn.Module):
         super().__init__()
         features = list(backbone.features.children())
         if return_interm_layers:
-            if name == 'vgg16_bn':
+            if name == 'vgg11':
+                self.body1 = nn.Sequential(*features[:5])
+                self.body2 = nn.Sequential(*features[5:10])
+                self.body3 = nn.Sequential(*features[10:15])
+                self.body4 = nn.Sequential(*features[15:20])
+            elif name == 'vgg11_bn':
+                self.body1 = nn.Sequential(*features[:7])
+                self.body2 = nn.Sequential(*features[7:14])
+                self.body3 = nn.Sequential(*features[14:21])
+                self.body4 = nn.Sequential(*features[21:28])
+            elif name == 'vgg13':
+                self.body1 = nn.Sequential(*features[:9])
+                self.body2 = nn.Sequential(*features[9:14])
+                self.body3 = nn.Sequential(*features[14:19])
+                self.body4 = nn.Sequential(*features[19:24])
+            elif name == 'vgg13_bn':
+                self.body1 = nn.Sequential(*features[:13])
+                self.body2 = nn.Sequential(*features[13:20])
+                self.body3 = nn.Sequential(*features[20:27])
+                self.body4 = nn.Sequential(*features[27:34])
+            elif name == 'vgg16':
+                self.body1 = nn.Sequential(*features[:9])
+                self.body2 = nn.Sequential(*features[9:16])
+                self.body3 = nn.Sequential(*features[16:23])
+                self.body4 = nn.Sequential(*features[23:30])
+            elif name == 'vgg16_bn':
                 self.body1 = nn.Sequential(*features[:13])
                 self.body2 = nn.Sequential(*features[13:23])
                 self.body3 = nn.Sequential(*features[23:33])
                 self.body4 = nn.Sequential(*features[33:43])
+            elif name == 'vgg19':
+                self.body1 = nn.Sequential(*features[:9])
+                self.body2 = nn.Sequential(*features[9:18])
+                self.body3 = nn.Sequential(*features[18:27])
+                self.body4 = nn.Sequential(*features[27:36])
+            elif name == 'vgg19_bn':
+                self.body1 = nn.Sequential(*features[:13])
+                self.body2 = nn.Sequential(*features[13:26])
+                self.body3 = nn.Sequential(*features[26:39])
+                self.body4 = nn.Sequential(*features[39:52])
         else:
-            if name == 'vgg16_bn':
+            if name == 'vgg11':
+                self.body = nn.Sequential(*features[:21])
+            elif name == 'vgg11_bn':
+                self.body = nn.Sequential(*features[:29])
+            elif name == 'vgg13':
+                self.body = nn.Sequential(*features[:25])
+            elif name == 'vgg13_bn':
+                self.body = nn.Sequential(*features[:35])
+            elif name == 'vgg16':
+                self.body = nn.Sequential(*features[:31])
+            elif name == 'vgg16_bn':
                 self.body = nn.Sequential(*features[:44])  # 16x down-sample
+            elif name == 'vgg19':
+                self.body = nn.Sequential(*features[:37])
+            elif name == 'vgg19_bn':
+                self.body = nn.Sequential(*features[:53])
         self.num_channels = num_channels
         self.return_interm_layers = return_interm_layers
         # FPN: Feature Pyramid Network
@@ -98,8 +147,22 @@ class Backbone_VGG(BackboneBase_VGG):
     VGG backbone
     """
     def __init__(self, name: str, return_interm_layers: bool):
-        if name == 'vgg16_bn':
+        if name == 'vgg11':
+            backbone = vgg11(pretrained=True)
+        elif name == 'vgg11_bn':
+            backbone = vgg11_bn(pretrained=True)
+        elif name == 'vgg13':
+            backbone = vgg13(pretrained=True)
+        elif name == 'vgg13_bn':
+            backbone = vgg13_bn(pretrained=True)
+        elif name == 'vgg16':
+            backbone = vgg16(pretrained=True)
+        elif name == 'vgg16_bn':
             backbone = vgg16_bn(pretrained=True)
+        elif name == 'vgg19':
+            backbone = vgg19(pretrained=True)
+        elif name == 'vgg19_bn':
+            backbone = vgg19_bn(pretrained=True)
         num_channels = 256
         super().__init__(backbone, num_channels, name, return_interm_layers)
 
@@ -109,12 +172,18 @@ class Joiner(nn.Sequential):
         super().__init__(backbone, position_embedding)
 
     def forward(self, tensor_list: NestedTensor):
+        # 여기서 self는 Joiner 자체.
+        # self[0]은 backbone(VGG, Efficient, etc), self[1]은 position_embedding을 의미한다.
+        # PET에서는 position embedding을 Attention is all you need 논문과 같이, cosine으로 만들고, 
+        # img에 맞게 Generalize했다. IMG에서 position embedding을 learnable parameter로 만들어도 어차피 position으로
+        # 학습이 진행되니, 알잘딱 했으리라 생각하고 position_embedding은 믿자.
         xs = self[0](tensor_list)
         out: Dict[NestedTensor] = {}
         pos = {}
         for name, x in xs.items():
             out[name] = x
             # position encoding
+            # nn.Modules로 만들었지만, learnable parameter는 전무하다.
             pos[name] = self[1](x).to(x.tensors.dtype)
         return out, pos
 
