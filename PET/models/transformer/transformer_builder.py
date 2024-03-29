@@ -101,6 +101,16 @@ def build_encoder(args, **kwargs):
             return_intermediate_dec=True,
             **kwargs
         )
+    elif args.transformer_method == 'all_pooling':
+        from .prog_win_poolformer_h import WinEncoderTransformer
+        return WinEncoderTransformer(
+        d_model=args.hidden_dim,
+        dropout=args.dropout,
+        dim_feedforward=args.dim_feedforward,
+        num_encoder_layers=args.enc_layers,
+        # activation="gelu",  #### CHANGE
+        **kwargs,
+    )
     else: # if Encoder is Basic
         from .prog_win_transformer import WinEncoderTransformer
         return WinEncoderTransformer(
@@ -165,6 +175,15 @@ def build_decoder(args, **kwargs):
             num_decoder_layers=args.dec_layers,
             return_intermediate_dec=True,
         )
+    elif args.transformer_method == 'all_pooling':
+        from .prog_win_poolformer_h import WinDecoderTransformer
+        return WinDecoderTransformer(
+        d_model=args.hidden_dim,
+        dropout=args.dropout,
+        dim_feedforward=args.dim_feedforward,
+        num_decoder_layers=args.dec_layers,
+        return_intermediate_dec=True,
+    )
     else: # if Decoder is Basic
         from .prog_win_transformer import WinDecoderTransformer
         return WinDecoderTransformer(

@@ -12,13 +12,13 @@ from .matcher import build_matcher
 from .backbones import *
 from .transformer import *
 from .position_encoding import build_position_encoding
-
+from .transformer.utils_pool import *
 
 class BasePETCount(nn.Module):
     """ 
     Base PET model
     """
-    def __init__(self, backbone, num_classes, quadtree_layer='sparse', args=None, **kwargs):
+    def __init__(self, num_classes, quadtree_layer='sparse', args=None, **kwargs):
         super().__init__()
         self.transformer = kwargs['transformer']
         hidden_dim = args.hidden_dim
@@ -49,17 +49,12 @@ class BasePETCount(nn.Module):
         points_queries = torch.vstack([shift_y.flatten(), shift_x.flatten()]).permute(1,0) # 2xN --> Nx2  # 1024, 2
         h, w = shift_x.shape
 
-        # get point queries embedding
-        query_embed = dense_input_embed[:, :, points_queries[:, 0], points_queries[:, 1]]
-        bs, c = query_embed.shape[:2]
-        query_embed = query_embed.view(bs, c, h, w)
-
         # get point queries features, equivalent to nearest interpolation
         shift_y_down, shift_x_down = points_queries[:, 0] // stride, points_queries[:, 1] // stride
         query_feats = src[:, :, shift_y_down,shift_x_down]
         query_feats = query_feats.view(bs, c, h, w)
 
-        return query_embed, points_queries, query_feats
+        return points_queries, query_feats
     
     def points_queris_embed_inference(self, samples, stride=8, src=None, **kwargs):
         """
@@ -81,37 +76,31 @@ class BasePETCount(nn.Module):
         points_queries = torch.vstack([shift_y.flatten(), shift_x.flatten()]).permute(1,0) # 2xN --> Nx2
         h, w = shift_x.shape
 
-        # get points queries embedding 
-        query_embed = dense_input_embed[:, :, points_queries[:, 0], points_queries[:, 1]]
-        bs, c = query_embed.shape[:2]
-
         # get points queries features, equivalent to nearest interpolation
         shift_y_down, shift_x_down = points_queries[:, 0] // stride, points_queries[:, 1] // stride
         query_feats = src[:, :, shift_y_down, shift_x_down]
         
         # window-rize
-        query_embed = query_embed.reshape(bs, c, h, w)
         points_queries = points_queries.reshape(h, w, 2).permute(2, 0, 1).unsqueeze(0)
         query_feats = query_feats.reshape(bs, c, h, w)
 
         dec_win_w, dec_win_h = kwargs['dec_win_size']
-        query_embed_win = window_partition(query_embed, window_size_h=dec_win_h, window_size_w=dec_win_w)
-        points_queries_win = window_partition(points_queries, window_size_h=dec_win_h, window_size_w=dec_win_w)
-        query_feats_win = window_partition(query_feats, window_size_h=dec_win_h, window_size_w=dec_win_w)
+        points_queries_win = window_partition_p(points_queries, window_size_h=dec_win_h, window_size_w=dec_win_w)
+        query_feats_win = window_partition_p(query_feats, window_size_h=dec_win_h, window_size_w=dec_win_w)
         
         # dynamic point query generation
-        div = kwargs['div']
-        div_win = window_partition(div.unsqueeze(1), window_size_h=dec_win_h, window_size_w=dec_win_w)
-        valid_div = (div_win > 0.5).sum(dim=0)[:,0]
+        div = kwargs['div'] # [1, 96, 128]
+        div_win = window_partition_p(div.unsqueeze(1), window_size_h=dec_win_h, window_size_w=dec_win_w) # [96, 1, 8, 16]
+        valid_dim3 = (div_win > 0.5).any(dim=3)
+        valid_div = valid_dim3.any(dim=2)
         v_idx = valid_div > 0
-        query_embed_win = query_embed_win[:, v_idx]
-        query_feats_win = query_feats_win[:, v_idx]
-        
+        v_idx = v_idx.squeeze(1)
+        query_feats_win = query_feats_win[v_idx, :, :, :]
         v_idx = torch.tensor(v_idx, device=points_queries_win.device)
-        points_queries_win = points_queries_win[:, v_idx.to(torch.bool)].reshape(-1, 2)
+        points_queries_win = points_queries_win[v_idx.to(torch.bool), :, :, :].reshape(-1, 2)
         # points_queries_win = points_queries_win[:, v_idx].reshape(-1, 2)
     
-        return query_embed_win, points_queries_win, query_feats_win, v_idx
+        return points_queries_win, query_feats_win, v_idx
         
     
     def get_point_query(self, samples, features, **kwargs):
@@ -122,13 +111,12 @@ class BasePETCount(nn.Module):
 
         # generate points queries and position embedding
         if 'train' in kwargs:
-            query_embed, points_queries, query_feats = self.points_queris_embed(samples, self.pq_stride, src, **kwargs)
-            query_embed = query_embed.flatten(2).permute(2,0,1) # NxCxHxW --> (HW)xNxC
+            points_queries, query_feats = self.points_queris_embed(samples, self.pq_stride, src, **kwargs)
             v_idx = None
         else:
-            query_embed, points_queries, query_feats, v_idx = self.points_queris_embed_inference(samples, self.pq_stride, src, **kwargs)
+            points_queries, query_feats, v_idx = self.points_queris_embed_inference(samples, self.pq_stride, src, **kwargs)
 
-        out = (query_embed, points_queries, query_feats, v_idx)
+        out = (points_queries, query_feats, v_idx)
         return out
     
     def predict(self, samples, points_queries, hs, **kwargs):
@@ -150,7 +138,6 @@ class BasePETCount(nn.Module):
         if 'test' in kwargs:
             outputs_offsets[...,0] /= (img_h / 256)
             outputs_offsets[...,1] /= (img_w / 256)
-
         outputs_points = outputs_offsets[-1] + points_queries
         out = {'pred_logits': outputs_class[-1], 'pred_points': outputs_points, 'img_shape': img_shape, 'pred_offsets': outputs_offsets[-1]}
     
@@ -159,24 +146,24 @@ class BasePETCount(nn.Module):
         return out
 
     def forward(self, samples, features, context_info, **kwargs):
-        encode_src, src_pos_embed, mask = context_info
+        encode_src = context_info
 
         # get points queries for transformer
         pqs = self.get_point_query(samples, features, **kwargs) # 백본과 fpn으로부터 얻는것은 point query 
         
         # point querying
         kwargs['pq_stride'] = self.pq_stride
-        hs = self.transformer(encode_src, src_pos_embed, mask, pqs, img_shape=samples.tensors.shape[-2:], **kwargs) # encoder의 결과물만 관여함
+        hs = self.transformer(encode_src, pqs, img_shape=samples.tensors.shape[-2:], **kwargs) # encoder의 결과물만 관여함
 
         # prediction
-        points_queries = pqs[1]
+        points_queries = pqs[0]
         outputs = self.predict(samples, points_queries, hs, **kwargs)
         return outputs
     
 
 class PET(nn.Module):
     """ 
-    Point quEry Transformerdfdf
+    Point quEry Transformer
     """
     def __init__(self, backbone, num_classes, args=None):
         super().__init__()
@@ -192,7 +179,7 @@ class PET(nn.Module):
             nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1),
             ]
         )
-        num_encoder = 4
+        num_encoder = 2
         # context encoder
         self.encode_feats = '8x'
         if num_encoder == 1:
@@ -219,8 +206,8 @@ class PET(nn.Module):
         # point-query quadtree
         args.sparse_stride, args.dense_stride = 8, 4  # point-query stride
         transformer = build_decoder(args)
-        self.quadtree_sparse = BasePETCount(backbone, num_classes, quadtree_layer='sparse', args=args, transformer=transformer)
-        self.quadtree_dense = BasePETCount(backbone, num_classes, quadtree_layer='dense', args=args, transformer=transformer)
+        self.quadtree_sparse = BasePETCount(num_classes, quadtree_layer='sparse', args=args, transformer=transformer)
+        self.quadtree_dense = BasePETCount(num_classes, quadtree_layer='dense', args=args, transformer=transformer)
 
     def compute_loss(self, outputs, criterion, targets, epoch, samples):
         """
@@ -320,8 +307,8 @@ class PET(nn.Module):
         src, mask = features[self.encode_feats].decompose()
         src_pos_embed = pos[self.encode_feats]
         assert mask is not None
-        encode_src = self.context_encoder(src, src_pos_embed, mask)  # [8, 256, 32, 32]
-        context_info = (encode_src, src_pos_embed, mask)
+        encode_src = self.context_encoder(src)  # [8, 256, 32, 32]
+        context_info = (encode_src)
         
         # apply quadtree splitter
         bs, _, src_h, src_w = src.shape  # bs = 8, src_h = 32, src_w = 32
@@ -592,7 +579,7 @@ class MLP(nn.Module):
 def build_pet(args):
     device = torch.device(args.device)
 
-     # build model
+    # build model
     num_classes = 1
     if args.backbone.startswith("vgg"):
         backbone = build_backbone_vgg(args)

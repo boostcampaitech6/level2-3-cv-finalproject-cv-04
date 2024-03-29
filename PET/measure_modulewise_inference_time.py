@@ -31,6 +31,10 @@ def get_args_parser():
                         help="Dropout applied in the transformer")
     parser.add_argument('--nheads', default=8, type=int,
                         help="Number of attention heads inside the transformer's attentions")
+    parser.add_argument('--transformer_method', default="basic", type=str, help="select your method")
+    
+    # - pet
+    parser.add_argument('--pet_method', default="basic", type=str, help="select your method")
     
     # loss parameters
     # - matcher

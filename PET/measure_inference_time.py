@@ -45,7 +45,11 @@ def get_args_parser():
                         help="Dropout applied in the transformer")
     parser.add_argument("--nheads", default=8, type=int,
                         help="Number of attention heads inside the transformer's attentions")
+    parser.add_argument('--transformer_method', default="basic", type=str, help="select your method")
     
+    # - pet
+    parser.add_argument('--pet_method', default="basic", type=str, help="select your method")
+
     # loss parameters
     # - matcher
     parser.add_argument("--set_cost_class", default=1, type=float,
@@ -77,9 +81,6 @@ def get_args_parser():
     
     # measure mode
     parser.add_argument("--repetitions", type=int, default=10)
-    
-    # transformer
-    parser.add_argument("--transformer_method", default="basic", type=str)
     
     # wandb
     parser.add_argument("--use_wandb", type=int, default=0)
