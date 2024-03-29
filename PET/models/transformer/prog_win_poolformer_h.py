@@ -432,27 +432,6 @@ def _get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
 
-def build_encoder_p(args, **kwargs):
-    return WinEncoderTransformer(
-        d_model=args.hidden_dim,
-        dropout=args.dropout,
-        dim_feedforward=args.dim_feedforward,
-        num_encoder_layers=args.enc_layers,
-        # activation="gelu",  #### CHANGE
-        **kwargs,
-    )
-
-
-def build_decoder_p(args, **kwargs):
-    return WinDecoderTransformer(
-        d_model=args.hidden_dim,
-        dropout=args.dropout,
-        dim_feedforward=args.dim_feedforward,
-        num_decoder_layers=args.dec_layers,
-        return_intermediate_dec=True,
-    )
-
-
 def _get_activation_fn(activation):
     """
     Return an activation function given a string
