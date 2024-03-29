@@ -1,5 +1,3 @@
-# vgg16_bn, efficient_b0
-# python measure_inference_time.py \
 python measure_modulewise_inference_time.py \
     --backbone="vgg16_bn" \
     --position_embedding="sine" \
@@ -13,8 +11,8 @@ python measure_modulewise_inference_time.py \
     --eos_coef=0.5 \
     --dataset_file="SHA" \
     --num_workers=8 \
-    --resume="./outputs/SHA/Transformer_87_Only_Encoder_Final_V2_VGG19_BN/best_checkpoint.pth" \
+    --resume="./best_checkpoint.pth" \
     --repetitions=10 \
-    --transformer_method="final_manual_attention" \
-    --pet_method="final_v2" \
+    --transformer_method="pet_crt" \
+    --pet_method="only_encoder_v2" \
     --measure_mode="total"

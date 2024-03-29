@@ -1,4 +1,3 @@
-CUDA_VISIBLE_DEVICES='0' \
 python eval.py \
     --dataset_file="SHA" \
     --resume="./best_checkpoint.pth" \
