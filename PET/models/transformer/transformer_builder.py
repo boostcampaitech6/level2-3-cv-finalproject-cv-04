@@ -88,6 +88,19 @@ def build_encoder(args, **kwargs):
             activation="gelu",  #### CHANGE
             **kwargs,
         )
+    elif args.transformer_method == "only_encoder":  # only encoder
+        from .prog_win_transformer_only_encoder import WinEncoderTransformer
+        
+        return WinEncoderTransformer(
+            d_model=args.hidden_dim,
+            dropout=args.dropout,
+            nhead=args.nheads,
+            dim_feedforward=args.dim_feedforward,
+            num_encoder_layers=args.dec_layers,
+            activation="gelu",  #### CHANGE
+            return_intermediate_dec=True,
+            **kwargs
+        )
     else: # if Encoder is Basic
         from .prog_win_transformer import WinEncoderTransformer
         return WinEncoderTransformer(
