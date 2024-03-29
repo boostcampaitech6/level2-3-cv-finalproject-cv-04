@@ -35,10 +35,13 @@ Crowd Counting을 decomposable point querying process로 정의합니다. sparse
 |Method|MAE|Inference Time(ms)|Std Dev|Parameters(M)|
 |---|---|---|---|---|
 |BaseModel|52.32|69.02|19.01|20.91|
-|PET-CRT|51.34|**47.2**|14.02|**18.08**|
+|[PET-CRT](https://drive.google.com/file/d/1n-TIDq9LtP6NXTswKxVCtgCymxm-kkO8/view?usp=drive_link)|51.34|**47.07**|14.01|**18.08**|
 - MAE **2.12% 향상**
-- 추론 속도 **31.61% 개선**
+- 추론 속도 **46.63% 개선**
+- 개선율 공식
   
+    <img src="https://imgur.com/UcCD38W.jpg" width=100>
+
 ## Members
 |<img src='https://imgur.com/ozd1yor.jpg' height=100 width=100px></img>|<img src='https://imgur.com/GXteBDS.jpg' height=100 width=100px></img>|<img src='https://imgur.com/aMVcwCF.jpg' height=100 width=100px></img>|<img src='https://imgur.com/F6ZfcEl.jpg' height=100 width=100px></img>|<img src='https://imgur.com/ZSVCV82.jpg' height=100 width=100px></img>|<img src='https://imgur.com/GBdY0k4.jpg' height=100 width=100px></img>|
 |:---:|:---:|:---:|:---:|:---:|:---:|
@@ -57,8 +60,6 @@ Crowd Counting을 decomposable point querying process로 정의합니다. sparse
 - Total Images : 483장 (train : 300, test : 182)
 - Image Size : Train (256, 256), Test (1024, 1024)
 
-## Model
-https://drive.google.com/file/d/1n-TIDq9LtP6NXTswKxVCtgCymxm-kkO8/view?usp=drive_link
 
 ## Demo
 <img width="80%" src="https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/assets/82288357/df833f79-de46-440b-b2a0-2af97489cab8.gif"/>
