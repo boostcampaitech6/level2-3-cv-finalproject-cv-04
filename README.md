@@ -57,6 +57,9 @@ Crowd Counting을 decomposable point querying process로 정의합니다. sparse
 - Total Images : 483장 (train : 300, test : 182)
 - Image Size : Train (256, 256), Test (1024, 1024)
 
+## Model
+https://drive.google.com/file/d/1n-TIDq9LtP6NXTswKxVCtgCymxm-kkO8/view?usp=drive_link
+
 ## Demo
 <img width="80%" src="https://github.com/boostcampaitech6/level2-3-cv-finalproject-cv-04/assets/82288357/df833f79-de46-440b-b2a0-2af97489cab8.gif"/>
 
