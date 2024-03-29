@@ -91,7 +91,7 @@ class WinDecoderTransformer(nn.Module):
         hs_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win, 
                                                                         query_pos=query_embed_win, **kwargs)
         # hs_win.shape: [2, 128, 64, 256]
-        hs_tmp = [window_partition_reverse(hs_w, dec_win_h, dec_win_w, qH, qW) for hs_w in hs_win]
+        hs_tmp = [window_reverse_output(hs_w, dec_win_h, dec_win_w, qH, qW) for hs_w in hs_win]
         hs = torch.vstack([hs_t.unsqueeze(0) for hs_t in hs_tmp])
         # hs.shape: [2, 1024, 8, 256]
         return hs
@@ -115,8 +115,9 @@ class WinDecoderTransformer(nn.Module):
         
         # window-rize memory input
         div_ratio = 1 if kwargs['pq_stride'] == 8 else 2
-        memory_win, pos_embed_win, mask_win = enc_win_partition(src, pos_embed, mask, 
-                                                    int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
+        memory_win = window_partition(src, int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
+        pos_embed_win = window_partition(pos_embed, int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
+        mask_win = window_partition(mask.unsqueeze(1), int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
 
         # dynamic decoder forward
         if 'test' in kwargs:

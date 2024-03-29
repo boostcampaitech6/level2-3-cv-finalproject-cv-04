@@ -152,21 +152,23 @@ class WinEncoderTransformer(nn.Module):
     def forward(self, src, pos_embed, mask):
         bs, c, h, w = src.shape  # [8, 256, 32, 32]
         
-        memeory_list = []
-        memeory = src
+        memory_list = []
+        memory = src
         for idx, enc_win_size in enumerate(self.enc_win_list):  # [(32, 16), (32, 16), (16, 8), (16, 8)]
             # encoder window partition
             enc_win_w, enc_win_h = enc_win_size
-            memeory_win, pos_embed_win, mask_win  = enc_win_partition(memeory, pos_embed, mask, enc_win_h, enc_win_w)  # [512, 16, 256]
+            memory_win = window_partition(src, enc_win_h, enc_win_w)
+            pos_embed_win = window_partition(pos_embed, enc_win_h, enc_win_w)
+            mask_win = window_partition(mask.unsqueeze(1), enc_win_h, enc_win_w)
 
             # encoder forward
-            output = self.encoder.single_forward(memeory_win, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx, enc_win_h = enc_win_h )
+            output = self.encoder.single_forward(memory_win, src_key_padding_mask=mask_win, pos=pos_embed_win, layer_idx=idx, enc_win_h = enc_win_h )
 
             # reverse encoder window
-            memeory = enc_win_partition_reverse(output, enc_win_h, enc_win_w, h, w)  # memory.shape = [8, 256, 32, 32]
+            memory = window_reverse(output, enc_win_h, enc_win_w, h, w)  # memory.shape = [8, 256, 32, 32]
             if self.return_intermediate:
-                memeory_list.append(memeory)
-        memory_ = memeory_list if self.return_intermediate else memeory
+                memory_list.append(memory)
+        memory_ = memory_list if self.return_intermediate else memory
         return memory_
 
 
@@ -214,7 +216,7 @@ class WinDecoderTransformer(nn.Module):
         # decoder attention
         hs_win = self.decoder(tgt, memory_win, memory_key_padding_mask=mask_win, pos=pos_embed_win, 
                                                                         query_pos=query_embed_win, **kwargs)
-        hs_tmp = [window_partition_reverse(hs_w, dec_win_h, dec_win_w, qH, qW) for hs_w in hs_win]
+        hs_tmp = [window_reverse_output(hs_w, dec_win_h, dec_win_w, qH, qW) for hs_w in hs_win]
         hs = torch.vstack([hs_t.unsqueeze(0) for hs_t in hs_tmp])
         return hs
     
@@ -237,8 +239,9 @@ class WinDecoderTransformer(nn.Module):
         
         # window-rize memory input
         div_ratio = 1 if kwargs['pq_stride'] == 8 else 2
-        memory_win, pos_embed_win, mask_win = enc_win_partition(src, pos_embed, mask, 
-                                                    int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
+        memory_win = window_partition(src, int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
+        pos_embed_win = window_partition(pos_embed, int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
+        mask_win = window_partition(mask.unsqueeze(1), int(self.dec_win_h/div_ratio), int(self.dec_win_w/div_ratio))
         
         # dynamic decoder forward
         if 'test' in kwargs:

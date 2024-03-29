@@ -169,7 +169,7 @@ class WinEncoderTransformer(nn.Module):
         # encoder attention
         self.enc_win_h = enc_win_h
         hs_win = self.encoder(tgt, query_pos=query_embed_win, enc_win_h = self.enc_win_h, **kwargs)
-        hs_tmp = [window_partition_reverse(hs_w, enc_win_h, enc_win_w, qH, qW) for hs_w in hs_win]
+        hs_tmp = [window_reverse_output(hs_w, enc_win_h, enc_win_w, qH, qW) for hs_w in hs_win]
         hs = torch.vstack([hs_t.unsqueeze(0) for hs_t in hs_tmp])
         return hs
     
