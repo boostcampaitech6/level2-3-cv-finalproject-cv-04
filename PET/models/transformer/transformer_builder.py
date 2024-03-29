@@ -183,6 +183,21 @@ def build_encoder(args, **kwargs):
             activation="gelu",
             **kwargs
         )
+    elif args.transformer_method == "pet_crt": 
+        from .prog_win_transformer_PET_CRT import WinEncoderTransformer
+        
+        kwargs["encoder_window_list"] = [(32, 16), (8, 4)]
+        num_encoder_layers = len(kwargs["encoder_window_list"])
+        
+        return WinEncoderTransformer(
+            d_model=args.hidden_dim,
+            dropout=args.dropout,
+            nhead=args.nheads,
+            dim_feedforward=args.dim_feedforward,
+            num_encoder_layers=num_encoder_layers,
+            activation="gelu",  #### CHANGE
+            **kwargs
+        )
     else: # if Encoder is Basic
         from .prog_win_transformer import WinEncoderTransformer
         return WinEncoderTransformer(
