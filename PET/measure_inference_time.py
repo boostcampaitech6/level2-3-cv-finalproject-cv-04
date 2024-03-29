@@ -4,7 +4,6 @@ import glob
 import random
 import argparse
 
-import wandb
 import cv2
 import numpy as np
 import torch
@@ -14,8 +13,6 @@ from tqdm import tqdm
 import torchvision.transforms as standard_transforms
 
 from models import build_model
-
-
 
 
 def natural_keys(text):
@@ -82,21 +79,10 @@ def get_args_parser():
     # measure mode
     parser.add_argument("--repetitions", type=int, default=10)
     
-    # wandb
-    parser.add_argument("--use_wandb", type=int, default=0)
-    parser.add_argument("--wandb_name", type=str, default="default")
     return parser
 
 
 def main(args):
-    # logging with wandb
-    if args.use_wandb:
-        wandb.init(
-            entity="level2_cv4_dc",
-            project="final-nota-inference",
-            name=args.wandb_name,
-            config=args)
-    
     utils.init_distributed_mode(args)
     print(args)
     device = torch.device(args.device)
@@ -163,18 +149,9 @@ def main(args):
                 torch.cuda.synchronize()
                 curr_time = starter.elapsed_time(ender)
                 timings[i, j] = curr_time
-        if args.use_wandb:
-            wandb.log({"Avg Inference Time per Image": np.mean(timings[i])})
-
+                
     mean_time = np.mean(timings)
     std_dev = np.std(timings)
-    
-    if args.use_wandb:
-        wandb.log({
-            "Avg Inference Time": mean_time,
-            "Std Dev": std_dev
-            })
-        
     print(f"Mean time = {mean_time}ms, std = {std_dev}ms")
     
 

@@ -1,14 +1,25 @@
-from models import build_model
-import argparse
-import cv2
-from PIL import Image
-import torchvision.transforms as standard_transforms
-import util.misc as utils
-import numpy as np
-from tqdm import tqdm
+import re 
+import os
+import glob
 import random
+import argparse
 
+import cv2
+import numpy as np
 import torch
+import util.misc as utils
+from PIL import Image
+from tqdm import tqdm
+import torchvision.transforms as standard_transforms
+
+from models import build_model
+
+
+def natural_keys(text):
+    """
+    alist.sort(key=natural_keys)를 사용하면, 텍스트에 포함된 숫자를 기준으로 정렬할 수 있습니다.
+    """
+    return [int(c) if c.isdigit() else c for c in re.split("(\d+)", text)]
 
 
 def get_args_parser():
@@ -31,10 +42,6 @@ def get_args_parser():
                         help="Dropout applied in the transformer")
     parser.add_argument('--nheads', default=8, type=int,
                         help="Number of attention heads inside the transformer's attentions")
-    parser.add_argument('--transformer_method', default="basic", type=str, help="select your method")
-    
-    # - pet
-    parser.add_argument('--pet_method', default="basic", type=str, help="select your method")
     
     # loss parameters
     # - matcher
@@ -61,11 +68,26 @@ def get_args_parser():
     parser.add_argument('--num_workers', default=2, type=int)
     
     # measure mode
-    parser.add_argument("--repetitions", type=int, default=1000)
-    parser.add_argument("--measure_mode", default="total",
+    parser.add_argument("--repetitions", type=int, default=10)
+    parser.add_argument("--measure_mode", default="total", choices=('total', 'parts', 'module'),
                         help="block: block-wise inference time, layer: layer-wise inference time.")
+    
+    # transformer
+    parser.add_argument("--transformer_method", default="basic", type=str)
+    
+    # - pet
+    parser.add_argument('--pet_method', default="basic", type=str, help="select your method")
     return parser
 
+def module_operation_start_time_hook(module, input):
+    starter.record()
+                        
+def module_operation_end_time_hook(module, input, output):
+    ender.record()
+    torch.cuda.synchronize()
+    curr_time = starter.elapsed_time(ender)
+    module_timings[name][i, iterator] += curr_time
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('PET evaluation script', parents=[get_args_parser()])
@@ -82,101 +104,119 @@ if __name__ == "__main__":
     model, criterion = build_model(args)
     model.to(device)
     
+    # check number of parameters
+    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print("params:", n_parameters / 1e6)
+    
+    # load pretrained model
     checkpoint = torch.load(args.resume, map_location='cpu')
     model.load_state_dict(checkpoint['model'])
     
-    # read image
-    img_path = './IMG_57.jpg'
-    img = cv2.imread(img_path)
-    img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    # get image paths
+    image_dir = "./data/ShanghaiTech/part_A/test_data/images"
+    image_paths = glob.glob(os.path.join(image_dir, "*.jpg"))
+    num_images = len(image_paths)
+
+    # natural_keys 함수를 사용하여 정렬
+    image_paths.sort(key=natural_keys)
     
-    transform = standard_transforms.Compose([
-        standard_transforms.ToTensor(), standard_transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                                      std=[0.229, 0.224, 0.225]),
-    ])
+    transform = standard_transforms.Compose(
+        [
+            standard_transforms.ToTensor(),
+            standard_transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            ),
+        ]
+    )
     
-    img = transform(img)
-    img = torch.Tensor(img).to(device)
-    img.unsqueeze_(0)
+    # prepare for measurement inference time
+    image_path = './IMG_57.jpg'
+    image = cv2.imread(image_path)
+    image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     
+    image = transform(image)
+    image = torch.Tensor(image).to(device)
+    image.unsqueeze_(0)
+    
+    for _ in range(10):
+        _ = model(image, test=True)
+    
+    # measure inference time
     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
     repetitions = args.repetitions
-
-    for _ in range(10):
-        _ = model(img, test=True)
-        
+    
+    model.eval()  # evaluation mode
     if args.measure_mode == "total":
-        timings = np.zeros((repetitions, 1))
+        timings = np.zeros((num_images, repetitions))
 
-        with torch.no_grad():
-            for rep in tqdm(range(repetitions)):
-                starter.record()
-                _ = model(img, test=True)
-                ender.record()
-                torch.cuda.synchronize()
-                curr_time = starter.elapsed_time(ender)
-                timings[rep] = curr_time
-
-        mean_syn = np.sum(timings) / repetitions
-        std_syn = np.std(timings)
-
-        print(f"Mean time = {mean_syn}ms, std = {std_syn}ms")
-    elif args.measure_mode == "block":
+        for i, img_path in enumerate(tqdm(image_paths)):
+            image = cv2.imread(img_path)
+            image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+            image = transform(image)
+            image = torch.Tensor(image).to(device)
+            image.unsqueeze_(0)
+            
+            with torch.no_grad():
+                for j in range(repetitions):
+                    starter.record()
+                    output = model(image, test=True)
+                    ender.record()
+                    torch.cuda.synchronize()
+                    curr_time = starter.elapsed_time(ender)
+                    timings[i, j] = curr_time
+            
+        mean_time = np.mean(timings)
+        std_dev = np.std(timings)
+            
+        print(f"Mean time = {mean_time}ms, std = {std_dev}ms")
+    elif args.measure_mode == "parts":
         module_timings = {}
         
-        # 모델의 각 모듈에 대한 타이머 설정
+        # 모델의 각 파트에 대한 추론 시간을 저장할 공간을 생성
         for name, module in model.named_children():
-            module_timings[name] = np.zeros((repetitions, 1))
+            module_timings[name] = np.zeros((num_images, repetitions))
 
         with torch.no_grad():
-            for rep in tqdm(range(repetitions)):
-                for name, module in model.named_children():
-                    
-                    def module_operation_start_time_hook(module, input):
-                        starter.record()
-                        
-                    def module_operation_end_time_hook(module, input, output):
-                        ender.record()
-                        torch.cuda.synchronize()
-                        curr_time = starter.elapsed_time(ender)
-                        module_timings[name][rep] += curr_time
+            for i, image_path in enumerate(tqdm(image_paths)):
+                image = cv2.imread(image_path)
+                image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+                image = transform(image)
+                image = torch.Tensor(image).to(device)
+                image.unsqueeze_(0)
+                for iterator in range(repetitions):
+                    for name, module in model.named_children():
+                        start = module.register_forward_pre_hook(module_operation_start_time_hook)
+                        end = module.register_forward_hook(module_operation_end_time_hook)
+                        _ = model(image, test=True)  # 모델 실행
+                        start.remove()
+                        end.remove()
 
-                    start = module.register_forward_pre_hook(module_operation_start_time_hook)
-                    end = module.register_forward_hook(module_operation_end_time_hook)
-                    _ = model(img, test=True)  # 모델 실행
-                    start.remove()
-                    end.remove()
-
-        # 각 모듈별 평균 추론 시간 및 표준 편차 계산 및 출력
+        # 각 파트별 평균 추론 시간 및 표준 편차 계산 및 출력
         for name, timings in module_timings.items():
             mean_syn = np.mean(timings)
             std_syn = np.std(timings)
             print(f"Module: {name}, Mean time = {mean_syn}ms, std = {std_syn}ms")
-    elif args.measure_mode == "layer":
+    elif args.measure_mode == "module":
         module_timings = {}
         
-        # 모델의 각 모듈에 대한 타이머 설정
+        # 모델의 각 모듈에 대한 추론 시간을 저장할 공간을 생성
         for name, module in model.named_modules():
-            module_timings[name] = np.zeros((repetitions, 1))
+            module_timings[name] = np.zeros((num_images, repetitions))
 
         with torch.no_grad():
-            for rep in tqdm(range(repetitions)):
-                for name, module in model.named_modules():
-                    
-                    def module_operation_start_time_hook(module, input):
-                        starter.record()
-                        
-                    def module_operation_end_time_hook(module, input, output):
-                        ender.record()
-                        torch.cuda.synchronize()
-                        curr_time = starter.elapsed_time(ender)
-                        module_timings[name][rep] += curr_time
-
-                    start = module.register_forward_pre_hook(module_operation_start_time_hook)
-                    end = module.register_forward_hook(module_operation_end_time_hook)
-                    _ = model(img, test=True)  # 모델 실행
-                    start.remove()
-                    end.remove()
+            for i, image_path in enumerate(tqdm(image_paths)):
+                image = cv2.imread(image_path)
+                image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+                image = transform(image)
+                image = torch.Tensor(image).to(device)
+                image.unsqueeze_(0)
+                for iterator in range(repetitions):
+                    for name, module in model.named_modules():
+                        start = module.register_forward_pre_hook(module_operation_start_time_hook)
+                        end = module.register_forward_hook(module_operation_end_time_hook)
+                        _ = model(image, test=True)  # 모델 실행
+                        start.remove()
+                        end.remove()
 
         # 각 모듈별 평균 추론 시간 및 표준 편차 계산 및 출력
         for name, timings in module_timings.items():
