@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 import os
 import shutil
-import wandb
 
 import numpy as np
 import torch
@@ -88,9 +87,6 @@ def get_args_parser():
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     
-    # wandb
-    parser.add_argument('--wandb_name', type=str, default='default')
-    parser.add_argument('--use_wandb', type=int, default=1)
     return parser
 
 
@@ -104,14 +100,6 @@ def main(args):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-    
-    # logging with wandb
-    if args.use_wandb:
-        wandb.init(
-            entity="level2_cv4_dc",
-            project="final-nota",
-            name=args.wandb_name,
-            config=args)
 
     # build model
     model, criterion = build_model(args)
@@ -226,11 +214,6 @@ def main(args):
             with open(run_log_name, "a") as f:
                 f.write(json.dumps(log_stats) + "\n")
         
-        # logging with wandb
-        if args.use_wandb:
-            wandb.log({**{f"{k}":v for k, v in train_stats.items()},
-                    "epoch":epoch+1})
-
         # evaluation
         if epoch % args.eval_freq == 0 and epoch > 0:
             t1 = time.time()
@@ -256,13 +239,6 @@ def main(args):
                 dst_path = output_dir / 'best_checkpoint.pth'
                 shutil.copyfile(src_path, dst_path)
             
-            # logging with wandb
-            if args.use_wandb:
-                wandb.log({
-                    "MAE":mae,
-                    "MSE":mse
-                })
-
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))

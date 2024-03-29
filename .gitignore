@@ -116,7 +116,6 @@ work_dirs/
 # Pytorch
 *.pth
 *.py~
-*.sh~
 
 # Local files
 outputs/
@@ -125,7 +124,6 @@ tmp/
 pretrained/
 wandb/
 results/
-*.sh
 CSH
 KSH
 KSM
