@@ -8,3 +8,6 @@ def build_model(args):
     elif args.pet_method == "only_encoder":
         from .pet_only_encoder import build_pet
         return build_pet(args)
+    elif args.pet_method == "one_encoder":
+        from .pet_one_encoder import build_pet
+        return build_pet(args)

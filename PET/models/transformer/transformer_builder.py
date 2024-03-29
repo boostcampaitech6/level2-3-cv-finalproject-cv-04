@@ -139,6 +139,20 @@ def build_encoder(args, **kwargs):
             activation="gelu",  #### CHANGE
             **kwargs
         )
+    elif args.transformer_method == "one_encoder":
+        from .prog_win_transformer_one_encoder_HiLo import WinEncoderTransformer
+
+        kwargs["enc_win_list"] = [(32, 16)]
+        args.enc_layers = len(kwargs["enc_win_list"])
+        return WinEncoderTransformer(
+            d_model=args.hidden_dim,
+            dropout=args.dropout,
+            nhead=args.nheads,
+            dim_feedforward=args.dim_feedforward,
+            num_encoder_layers=args.enc_layers,
+            activation="gelu",  #### CHANGE
+            **kwargs
+        )
     else: # if Encoder is Basic
         from .prog_win_transformer import WinEncoderTransformer
         return WinEncoderTransformer(
