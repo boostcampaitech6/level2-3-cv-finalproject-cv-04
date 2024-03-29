@@ -111,6 +111,34 @@ def build_encoder(args, **kwargs):
         # activation="gelu",  #### CHANGE
         **kwargs,
     )
+    elif args.transformer_method == "only_encoder_HiLo":
+        from .prog_win_transformer_only_encoder_HiLo import WinEncoderTransformer
+
+        kwargs["enc_win_list"] = [(32, 16)]
+        args.enc_layers = len(kwargs["enc_win_list"])
+        return WinEncoderTransformer(
+            d_model=args.hidden_dim,
+            dropout=args.dropout,
+            nhead=args.nheads,
+            dim_feedforward=args.dim_feedforward,
+            num_encoder_layers=args.enc_layers,
+            activation="gelu",  #### CHANGE
+            **kwargs
+        )
+    elif args.transformer_method == "only_encoder_H_P":
+        from .prog_win_transformer_only_encoder_Pool_in_HiLo import WinEncoderTransformer
+
+        kwargs["enc_win_list"] = [(32, 16)]
+        args.enc_layers = len(kwargs["enc_win_list"])
+        return WinEncoderTransformer(
+            d_model=args.hidden_dim,
+            dropout=args.dropout,
+            nhead=args.nheads,
+            dim_feedforward=args.dim_feedforward,
+            num_encoder_layers=args.enc_layers,
+            activation="gelu",  #### CHANGE
+            **kwargs
+        )
     else: # if Encoder is Basic
         from .prog_win_transformer import WinEncoderTransformer
         return WinEncoderTransformer(
